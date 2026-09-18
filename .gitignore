@@ -8,5 +8,3 @@ airpress.db
 airpress
 airpress.exe
 __debug_bin
-/resources/template/theme/
-!/resources/template/theme/default-theme-anatole

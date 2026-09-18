@@ -1,0 +1,3 @@
+[submodule "resources/template/themes/anatole"]
+    path = resources/template/themes/theme-anatole
+    url = https://github.com/hipoint-airpress/theme-anatole.git
