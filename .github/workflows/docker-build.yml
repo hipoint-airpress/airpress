@@ -25,13 +25,13 @@
 
         # 2. 设置 Docker Buildx
         - name: Set up Docker Buildx
-          uses: docker/setup-buildx-action@v3
+          uses: docker/setup-buildx-action@v4
 
         # 3. 登录 Docker Hub
         # PR 不需要登录
         - name: Login to Docker Hub
           if: github.event_name != 'pull_request'
-          uses: docker/login-action@v3
+          uses: docker/login-action@v4
           with:
             username: ${{ secrets.DOCKERHUB_USERNAME }}
             password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -39,7 +39,7 @@
         # 4. 提取 Docker 镜像元数据
         - name: Docker metadata
           id: meta
-          uses: docker/metadata-action@v5
+          uses: docker/metadata-action@v6
           with:
             images: h1dian/airpress
             tags: |
@@ -57,7 +57,7 @@
 
         # 5. 构建 / 推送 Docker 镜像
         - name: Build and Push
-          uses: docker/build-push-action@v6
+          uses: docker/build-push-action@v7
           with:
             context: .
             file: ./scripts/Dockerfile
