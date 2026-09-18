@@ -102,7 +102,7 @@ func (t *TemplateConfigListener) loadThemeTemplate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// 主题目录名与其 id 不一定相同（如 default-theme-anatole 的 id 为 caicai_anatole），
+	// 主题目录名与其 id 不一定相同（如 default theme anatole的id为caicai_anatole），
 	// 模板命名空间以主题 id 为准，需显式挂载
 	t.Template.Mount(theme.ID, theme.ThemePath)
 	err = t.Template.Load([]string{filepath.Join(t.Config.AirPress.TemplateDir, "common"), theme.ThemePath})

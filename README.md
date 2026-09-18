@@ -4,15 +4,13 @@
 
 <p align="center"><b>AirPress </b> is a Go Blogging Platform. Simple and Powerful.</p>
 
-<p align="center">A community-maintained fork of <a href="https://github.com/go-sonic/sonic">go-sonic/sonic</a></p>
+<p align="center">A community-maintained fork of <a href="https://github.com/hipoint-airpress/airpress">hipoint-airpress/airpress</a></p>
 
 <p align="center">
 <a href="https://github.com/hipoint-airpress/airpress/releases"><img alt="GitHub release" src="https://img.shields.io/github/release/hipoint-airpress/airpress.svg?style=flat-square&include_prereleases" /></a>
 <a href="https://github.com/hipoint-airpress/airpress/releases"><img alt="GitHub All Releases" src="https://img.shields.io/github/downloads/hipoint-airpress/airpress/total.svg?style=flat-square" /></a>
-<a href="https://hub.docker.com/r/gosonic/sonic"><img alt="Docker pulls" src="https://img.shields.io/docker/pulls/gosonic/sonic?style=flat-square" /></a>
+<a href="https://hub.docker.com/r/h1dian/airpress"><img alt="Docker pulls" src="https://img.shields.io/docker/pulls/h1dian/airpress?style=flat-square" /></a>
 <a href="https://github.com/hipoint-airpress/airpress/commits"><img alt="GitHub last commit" src="https://img.shields.io/github/last-commit/hipoint-airpress/airpress.svg?style=flat-square" /></a>
-<br />
-<a href="https://t.me/go_sonic">Telegram Channel</a>
 </p>
 
 
@@ -45,7 +43,7 @@ Thanks to the [Halo](https://github.com/halo-dev) project team, who inspired thi
 
 ## 🎊 Preview
 
-![Default Theme](https://github.com/go-sonic/default-theme-anatole/raw/master/screenshot.png)
+![Default Theme](https://raw.githubusercontent.com/hipoint-airpress/theme-anatole/main/screenshot.png)
 
 ![Console](https://github.com/go-sonic/resources/raw/master/console-screenshot.png)
 
@@ -92,25 +90,13 @@ go run main.go
 🚀 Done! Your project is now compiled and ready to use.
 
 ## Docker
-See: https://hub.docker.com/r/gosonic/sonic
+See: https://hub.docker.com/r/h1dian/airpress
 
 ## Theme ecology
 
-| Theme   | 
-|---------|
-| [Anatole](https://github.com/go-sonic/default-theme-anatole) |
-| [Journal](https://github.com/hooxuu/sonic-theme-Journal) |
-| [Clark](https://github.com/ClarkQAQ/sonic_theme_clark)   |
-| [Earth](https://github.com/Meepoljdx/sonic-theme-earth) |
-| [PaperMod](https://github.com/jakezhu9/sonic-theme-papermod) |
-| [Tink](https://github.com/raisons/sonic-theme-tink) |
-
-## TODO
-- [ ] i18n
-- [ ] PostgreSQL
-- [ ] Better error handling
-- [ ] Plugin(base on Wasm)
-- [ ] Use new web framework([Hertz](https://github.com/cloudwego/hertz))
+| Theme                                                                        | 
+|------------------------------------------------------------------------------|
+| [Anatole](https://github.com/hipoint-airpress/theme-anatole) |
 
 ## Contributing
 
@@ -121,13 +107,10 @@ AirPress follows the [Contributor Covenant](http://contributor-covenant.org/vers
 ### Contributors
 
 This project exists thanks to all the people who contribute. 
-<a href="https://github.com/hipoint-airpress/airpress/graphs/contributors"><img src="https://opencollective.com/go-sonic/contributors.svg?width=890&button=false" /></a>
-
-Special thanks to Evan (evanzhao@88.com), who designed the logo.
+<a href="https://github.com/hipoint-airpress/airpress/graphs/contributors"><img src="https://contrib.rocks/image?repo=hipoint-airpress/airpress" /></a>
 
 ## 📄 License
 
 The Go backend and the rest of the source code in `airpress` is available under the [MIT License](/LICENSE.md).
 
-The compiled admin console in [`resources/admin/`](resources/admin) is a fork of the Halo console and is distributed under the **[GPL-3.0](resources/admin/LICENSE)** — see [`resources/admin/NOTICE.md`](resources/admin/NOTICE.md) for its origin and corresponding source.
 

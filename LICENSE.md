@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2022 go-sonic
+Copyright (c) 2022 h1dian
 Copyright (c) 2026 AirPress contributors
 
 Permission is hereby granted,free of charge, to any person obtaining a copy
