@@ -24,9 +24,9 @@ const (
 	AirPressBackupMarkdownPrefix = "airpress-backup-markdown-"
 	AirPressDefaultTagColor      = "#cfd3d7"
 	AirPressUploadDir            = "upload"
-	// AirPressDefaultThemeDirName must keep matching the default theme submodule
+	// AirPressDefaultThemeDirName must keep matching the default theme submodule!!
 	// repository name (see .gitmodules); renaming it breaks theme resolution.
-	AirPressDefaultThemeDirName = "default-theme-anatole"
+	AirPressDefaultThemeDirName = "anatole"
 )
 
 var (

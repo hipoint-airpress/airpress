@@ -23,7 +23,7 @@ type mount struct {
 // 虚拟模板路径 == 原 html/template 中 {{define "..."}} 的名字，即文件相对路径去掉 .tmpl 后缀：
 //
 //	common/macro/head           -> <TemplateDir>/common/macro/head.tmpl
-//	caicai_anatole/index        -> <ThemeDir>/default-theme-anatole/index.tmpl
+//	caicai_anatole/index        -> <ThemeDir>/anatole/index.tmpl
 //
 // 注意前缀取自主题 theme.yaml 的 id 字段，与主题目录名不一定相同，因此由外部显式 Mount。
 type Loader struct {

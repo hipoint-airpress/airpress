@@ -4,16 +4,13 @@
 
 <p align="center"><b>AirPress </b> 是一个用Golang开发的轻量级CMS平台，高效快速.</p>
 
-<p align="center"><a href="https://github.com/go-sonic/sonic">go-sonic/sonic</a> 的社区维护分支</p>
+<p align="center"><a href="https://github.com/hipoint-airpress/airpress">hipoint-airpress/airpress</a> 的社区维护分支</p>
 
 <p align="center">
 <a href="https://github.com/hipoint-airpress/airpress/releases"><img alt="GitHub release" src="https://img.shields.io/github/release/hipoint-airpress/airpress.svg?style=flat-square&include_prereleases" /></a>
 <a href="https://github.com/hipoint-airpress/airpress/releases"><img alt="GitHub All Releases" src="https://img.shields.io/github/downloads/hipoint-airpress/airpress/total.svg?style=flat-square" /></a>
-<a href="https://hub.docker.com/r/gosonic/sonic"><img alt="Docker pulls" src="https://img.shields.io/docker/pulls/gosonic/sonic?style=flat-square" /></a>
+<a href="https://hub.docker.com/r/h1dian/airpress"><img alt="Docker pulls" src="https://img.shields.io/docker/pulls/h1dian/airpress?style=flat-square" /></a>
 <a href="https://github.com/hipoint-airpress/airpress/commits"><img alt="GitHub last commit" src="https://img.shields.io/github/last-commit/hipoint-airpress/airpress.svg?style=flat-square" /></a>
-
-<br />
-<a href="https://t.me/go_sonic">Telegram 频道</a>
 </p>
 
 
@@ -23,7 +20,7 @@ AirPress 致力于成为高效快速的开源CMS平台。
 
 ## 🔀 关于本项目
 
-AirPress 是 [go-sonic/sonic](https://github.com/go-sonic/sonic) 项目的分支，重命名为 AirPress，并维护于 [hipoint-airpress/airpress](https://github.com/hipoint-airpress/airpress)。
+AirPress 克隆自 [go-sonic/sonic](https://github.com/go-sonic/sonic) 项目，重命名为 AirPress，并维护于 [hipoint-airpress/airpress](https://github.com/hipoint-airpress/airpress)。
 
 上游项目自 2024 年 5 月起已无新的提交，因此 AirPress 现在是该项目持续维护的延续版本：
 
@@ -43,7 +40,7 @@ AirPress 是 [go-sonic/sonic](https://github.com/go-sonic/sonic) 项目的分支
 
 ## 🎊 Preview
 
-![默认主题](https://github.com/go-sonic/default-theme-anatole/raw/master/screenshot.png)
+![默认主题](https://raw.githubusercontent.com/hipoint-airpress/theme-anatole/main/screenshot.png)
 
 ![控制台](https://github.com/go-sonic/resources/raw/master/console-screenshot.png)
 
@@ -79,30 +76,18 @@ git clone --recursive --depth 1 https://github.com/hipoint-airpress/airpress
 cd airpress
 go run main.go
 ```
-> 如果你在windows上构建该项目，请确保你已经正确安装了gcc编译器，比如，你可以在[这里](https://jmeubank.github.io/tdm-gcc/)找到一个TDM版本的gcc编译器。
+> 如果你在windows上构建该项目，请确保你已经正确安装了gcc编译器，你可以在[这里](https://www.mingw-w64.org/getting-started/msys2/) 找到并安装mingw-w64 GNU工具链。
 
 🚀 完成! 你的项目现在已经运行起来了。
 
 ## Docker
-See: https://hub.docker.com/r/gosonic/sonic
+See: https://hub.docker.com/r/h1dian/airpress
 
 ## 主题生态
 
-| Theme   | 
-|---------|
-| [Anatole](https://github.com/go-sonic/default-theme-anatole) |
-| [Journal](https://github.com/hooxuu/sonic-theme-Journal) |
-| [Clark](https://github.com/ClarkQAQ/sonic_theme_clark)   |
-| [Earth](https://github.com/Meepoljdx/sonic-theme-earth) |
-| [PaperMod](https://github.com/jakezhu9/sonic-theme-papermod) |
-| [Tink](https://github.com/raisons/sonic-theme-tink) |
-
-## TODO
-- [ ] i18n
-- [ ] PostgreSQL
-- [ ] 更好的错误处理
-- [ ] 插件系统(基于 Wasm)
-- [ ] 使用新的web框架([Hertz](https://github.com/cloudwego/hertz))
+| Theme                                                                | 
+|----------------------------------------------------------------------|
+| [Anatole](https://github.com/hipoint-airpress/theme-anatole) |
 
 
 ## 如何贡献
@@ -115,14 +100,8 @@ AirPress 遵循 [Contributor Covenant](http://contributor-covenant.org/version/1
 ### 贡献者
 
 感谢以下参与项目的人：
-<a href="https://github.com/hipoint-airpress/airpress/graphs/contributors"><img src="https://opencollective.com/go-sonic/contributors.svg?width=890&button=false" /></a>
-
-特别感谢 Evan(evanzhao@88.com) ，他帮助设计了Logo。
-
+<a href="https://github.com/hipoint-airpress/airpress/graphs/contributors"><img src="https://contrib.rocks/image?repo=hipoint-airpress/airpress" />></a>
 
 ## 📄 License
 
 AirPress 的 Go 后端以及其余源码基于 [MIT License](/LICENSE.md) 开源。
-
-[`resources/admin/`](resources/admin) 目录下的后台前端编译产物 Fork 自 Halo 控制台，以 **[GPL-3.0](resources/admin/LICENSE)** 分发 —— 来源说明与对应源码位置见 [`resources/admin/NOTICE.md`](resources/admin/NOTICE.md)。
-

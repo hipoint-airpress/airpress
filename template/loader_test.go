@@ -17,8 +17,7 @@ import (
 func themeMounts(root string) []struct{ prefix, dir string } {
 	return []struct{ prefix, dir string }{
 		{"common", filepath.Join(root, "common")},
-		{"caicai_anatole", filepath.Join(root, "theme", "default-theme-anatole")},
-		{"simple_corp_portal", filepath.Join(root, "theme", "simple-corp-portal")},
+		{"caicai_anatole", filepath.Join(root, "theme", "anatole")},
 	}
 }
 
@@ -80,7 +79,7 @@ func TestTemplateNamespaceMatchesDefineNames(t *testing.T) {
 		}
 	}
 
-	for _, themeID := range []string{"caicai_anatole", "simple_corp_portal"} {
+	for _, themeID := range []string{"caicai_anatole"} {
 		for _, page := range []string{"index", "post", "sheet", "archives", "categories",
 			"category", "tags", "tag", "journals", "links", "photos", "search"} {
 			name := themeID + "/" + page
@@ -175,8 +174,8 @@ func TestExecuteTemplateEscaping(t *testing.T) {
 
 	// feed 模板整体关闭转义，CDATA 内的富文本应原样输出
 	out = render("common/web/rss", Model{
-		"blog_title": "T",
-		"blog_url":   "http://x",
+		"blog_title":   "T",
+		"blog_url":     "http://x",
 		"version":      "1",
 		"lastModified": time.Now(),
 		"posts":        nil,

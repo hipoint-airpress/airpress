@@ -74,7 +74,7 @@ func NewTemplate(logger *zap.Logger, bus event.Bus) *Template {
 }
 
 // Mount 显式声明模板目录的命名空间前缀。
-// 主题目录名与主题 id 不一定相同（如 default-theme-anatole 的 id 是 caicai_anatole），
+// 主题目录名与主题 id 不一定相同（如 default theme anatole的id是caicai_anatole），
 // 因此调用方需要在 Load 前用主题 id 挂载其目录。
 func (t *Template) Mount(prefix, dir string) {
 	t.loader.Mount(prefix, dir)
