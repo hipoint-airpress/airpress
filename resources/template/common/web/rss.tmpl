@@ -1,0 +1,46 @@
+{%- autoescape off -%}
+    <?xml version="1.0" encoding="utf-8"?>
+    <rss version="2.0">
+        <channel>
+            {% if category %}
+                <title>分类：{{ category.Name }} - {{ blog_title }}</title>
+            {% else %}
+                <title>{{ blog_title }}</title>
+            {% endif %}
+            {% if category %}
+                <link>{{ category.FullPath }}</link>
+            {% else %}
+                <link>{{ blog_url }}</link>
+            {% endif %}
+            {% if category %}
+                {% if category.Description %}
+                    <description>{{ category.Description }}</description>
+                {% endif %}
+            {% else %}
+                {% if user.Description %}
+                    <description>{{ user.Description }}</description>
+                {% endif %}
+            {% endif %}
+            <generator>AirPress {{ version }}</generator>
+            <lastBuildDate>{{ lastModified.Format("Mon, 02 Jan 2006 15:04:05 GMT") }}</lastBuildDate>
+            {% if posts|length > 0 %}
+                {% for post in posts %}
+                    <item>
+                        <title>
+                            <![CDATA[{{ post.Title }}]]>
+                        </title>
+                        <link>{%- if globalAbsolutePathEnabled %}{{ blog_url }}{% endif %}{{ post.FullPath }}</link>
+                        <description>
+                            {%- if options.rss_content_type == "full" -%}
+                                <![CDATA[{{ post.Content }}]]>
+                            {%- else -%}
+                                <![CDATA[{{ post.Summary }}]]>
+                            {%- endif -%}
+                        </description>
+                        <pubDate>{{ unix_milli_time_format("Mon, 02 Jan 2006 15:04:05 GMT", post.CreateTime) }}</pubDate>
+                    </item>
+                {% endfor %}
+            {% endif %}
+        </channel>
+    </rss>
+{% endautoescape %}

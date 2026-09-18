@@ -1,0 +1,1 @@
+var e=`/images/placeholder.jpg`;export{e as t};

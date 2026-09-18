@@ -1,0 +1,12 @@
+{% if type == "journal" or not target.DisallowComment %}
+        <div id="comment"></div>
+        <script src="https://cdn.staticfile.org/vue/3.3.4/vue.global.prod.js"></script>
+        <script src="{{ options.comment_internal_plugin_js }}"></script>
+        <script>
+            SonicComment.init("#comment", {
+                target: "{{ type }}s",
+                targetId: {{ target.ID }},
+                colorScheme: "light"
+            });
+        </script>
+{% endif %}

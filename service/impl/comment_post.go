@@ -1,0 +1,58 @@
+package impl
+
+import (
+	"context"
+	"errors"
+
+	"gorm.io/gorm"
+
+	"github.com/hipoint-airpress/airpress/consts"
+	"github.com/hipoint-airpress/airpress/dal"
+	"github.com/hipoint-airpress/airpress/model/entity"
+	"github.com/hipoint-airpress/airpress/model/param"
+	"github.com/hipoint-airpress/airpress/service"
+	"github.com/hipoint-airpress/airpress/util/xerr"
+)
+
+type postCommentServiceImpl struct {
+	service.BaseCommentService
+}
+
+func NewPostCommentService(baseCommentService service.BaseCommentService) service.PostCommentService {
+	return &postCommentServiceImpl{
+		BaseCommentService: baseCommentService,
+	}
+}
+
+func (p postCommentServiceImpl) CreateBy(ctx context.Context, commentParam *param.Comment) (*entity.Comment, error) {
+	postDAL := dal.GetQueryByCtx(ctx).Post
+	post, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(commentParam.PostID)).First()
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, xerr.WithMsg(nil, "post not found").WithStatus(xerr.StatusBadRequest)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if post.DisallowComment {
+		return nil, xerr.WithMsg(nil, "This post does not allow comments").WithStatus(xerr.StatusBadRequest)
+	}
+	return p.BaseCommentService.CreateBy(ctx, commentParam)
+}
+
+func (p postCommentServiceImpl) UpdateBy(ctx context.Context, commentID int32, commentParam *param.Comment) (*entity.Comment, error) {
+	if commentID == 0 {
+		return nil, nil
+	}
+	comment := p.ConvertParam(commentParam)
+	comment.ID = commentID
+	return p.Update(ctx, comment)
+}
+
+func (p postCommentServiceImpl) CountByStatus(ctx context.Context, status consts.CommentStatus) (int64, error) {
+	postCommentDAL := dal.GetQueryByCtx(ctx).Comment
+	count, err := postCommentDAL.WithContext(ctx).Where(postCommentDAL.Type.Eq(consts.CommentTypePost), postCommentDAL.Status.Eq(status)).Count()
+	if err != nil {
+		return 0, WrapDBErr(err)
+	}
+	return count, nil
+}

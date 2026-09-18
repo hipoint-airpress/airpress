@@ -1,0 +1,7 @@
+{% if options.seo_spider_disabled %}
+        <meta name="robots" content="none">
+{% endif %}
+        <meta name="generator" content="AirPress {{ version }}"/>
+{% include "common/macro/custom_head" %}
+{% include "common/macro/custom_content_head" %}
+{% include "common/macro/favicon" %}

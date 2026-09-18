@@ -1,0 +1,35 @@
+{%- autoescape off -%}
+    <?xml version="1.0" encoding="UTF-8"?>
+    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <url>
+            <loc>{{ blog_url }}</loc>
+            <lastmod>{{ unix_milli_time_format("2006-01-02T15:04:05Z07:00", options.birthday) }}</lastmod>
+        </url>
+        {% if posts|length > 0 %}
+            {% for post in posts %}
+                <url>
+                    <loc>{%- if globalAbsolutePathEnabled %}{{ blog_url }}{% endif %}{{ post.FullPath }}</loc>
+                    <lastmod>{{ unix_milli_time_format("2006-01-02T15:04:05Z07:00", post.CreateTime) }}</lastmod>
+                </url>
+            {% endfor %}
+        {% endif %}
+        {% set categorys = listCategory() %}
+        {% if categorys|length > 0 %}
+            {% for category in categorys %}
+                <url>
+                    <loc>{%- if globalAbsolutePathEnabled %}{{ blog_url }}{% endif %}{{ category.FullPath }}</loc>
+                    <lastmod>{{ unix_milli_time_format("2006-01-02T15:04:05Z07:00", category.CreateTime) }}</lastmod>
+                </url>
+            {% endfor %}
+        {% endif %}
+        {% set tags = getAllTag() %}
+        {% if tags|length > 0 %}
+            {% for tag in tags %}
+                <url>
+                    <loc>{%- if globalAbsolutePathEnabled %}{{ blog_url }}{% endif %}{{ tag.FullPath }}</loc>
+                    <lastmod>{{ unix_milli_time_format("2006-01-02T15:04:05Z07:00", tag.CreateTime) }}</lastmod>
+                </url>
+            {% endfor %}
+        {% endif %}
+    </urlset>
+{% endautoescape %}
