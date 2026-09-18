@@ -1,21 +1,13 @@
   name: Docker Build and Push
 
   on:
+    # 发布版本时，push Git Tag 自动触发
     push:
-      branches:
-        - main
-        - 'feat/**'
       tags:
         - 'v*'
 
     # 手动执行
     workflow_dispatch:
-
-    # Pull Request 只构建，不推送
-    pull_request:
-      branches:
-        - main
-
 
   jobs:
     build-and-push:
@@ -27,7 +19,7 @@
       steps:
         # 1. 检出代码
         - name: Checkout code
-          uses: actions/checkout@v4
+          uses: actions/checkout@v5
           with:
             fetch-depth: 0
 
@@ -62,10 +54,6 @@
               # main -> main
               # feat/login -> feat-login
               type=ref,event=branch
-              
-              # Git commit
-              # git-abc1234
-              type=sha,prefix=git-
 
         # 5. 构建 / 推送 Docker 镜像
         - name: Build and Push
