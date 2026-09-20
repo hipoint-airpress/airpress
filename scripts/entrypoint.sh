@@ -1,23 +1,16 @@
 #!/bin/sh
 
-set -eu
-
-# 镜像内置的默认 resources
-IMAGE_RESOURCE="/resources"
-
+# 镜像内置默认 resources
+IMAGE_RESOURCE_DIR="/resources"
 # 宿主机实际使用的 resources
-HOST_RESOURCE="/app/resources"
+HOST_RESOURCE_DIR="/app/resources"
 
-echo "Initialize AirPress resources..."
-
-# 确保目标 resources 存在
-mkdir -p "$HOST_RESOURCE"
-
-# 复制镜像中的默认只复制不存在的文件
-cp -an "$IMAGE_RESOURCE"/. "$HOST_RESOURCE"/
-
-echo "AirPress resources initialization done."
+mkdir -p "$HOST_RESOURCE_DIR"
+if [ -d "$DIR_IMAGE_RESOURCE_DIR" ]; then
+    echo "Copy default resources from $IMAGE_RESOURCE_DIR to $HOST_RESOURCE_DIR..."
+    # 递归复制，但不覆盖宿主机已有文件
+    cp -fr "IMAGE_RESOURCE_DIR"/* "$HOST_RESOURCE_DIR"/
+fi
 
 echo "Start AirPress..."
-
 exec /app/airpress -config /app/conf/config.yaml

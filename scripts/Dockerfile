@@ -41,14 +41,11 @@ WORKDIR /app
 COPY --from=builder /app/airpress /app/airpress
 COPY --from=builder /app/conf /app/conf
 COPY --from=builder /app/entrypoint.sh /app/entrypoint.sh
-
 # 镜像默认 resources
 COPY --from=builder /app/resources /resources
 
 RUN mkdir -p /app/resources \
     && chmod +x /app/entrypoint.sh
-
-VOLUME /app/resources
 
 EXPOSE 8080
 
