@@ -34,8 +34,8 @@ RUN  apk add --no-cache tzdata \
     && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
     && echo "Asia/Shanghai" > /etc/timezone
 
-VOLUME /airpress
+VOLUME /app
 EXPOSE 8080
 
-WORKDIR /airpress
-CMD /app/docker_init.sh && /app/airpress -config /airpress/conf/config.yaml
+WORKDIR /app
+CMD /app/docker_init.sh && /app/airpress -config /app/conf/config.yaml
