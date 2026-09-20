@@ -30,9 +30,11 @@ FROM alpine:latest AS prod
 
 COPY --from=builder /app/ /app/
 
-RUN  apk add --no-cache tzdata \
+RUN apk add --no-cache tzdata \
     && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
     && echo "Asia/Shanghai" > /etc/timezone
+
+RUN chmod +x /app/docker_init.sh
 
 VOLUME /app
 EXPOSE 8080
