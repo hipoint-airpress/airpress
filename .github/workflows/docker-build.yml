@@ -55,7 +55,11 @@
               # feat/login -> feat-login
               type=ref,event=branch
 
-        # 5. 构建 / 推送 Docker 镜像
+        # 5. 设置Build时间
+        - name: Set build time
+          run: echo "BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
+
+        # 6. 构建 / 推送 Docker 镜像
         - name: Build and Push
           uses: docker/build-push-action@v7
           with:
@@ -70,7 +74,7 @@
 
             build-args: |
               BUILD_COMMIT=${{ github.sha }}
-              BUILD_TIME=${{ github.event.head_commit.timestamp || github.run_started_at }}
+              BUILD_TIME=${{ env.BUILD_TIME }}
               AIRPRESS_VERSION=${{ steps.meta.outputs.version }}
               SUBMODULE_UPDATE=${{ github.run_id }}
 
