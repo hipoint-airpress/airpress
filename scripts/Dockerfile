@@ -1,5 +1,9 @@
 FROM golang:1.27.1-alpine AS builder
-RUN apk --no-cache add git ca-certificates gcc g++
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    gcc \
+    musl-dev
 
 COPY . /go/src/github.com/hipoint-airpress/airpress/
 WORKDIR /go/src/github.com/hipoint-airpress/airpress
@@ -14,30 +18,39 @@ ARG AIRPRESS_VERSION
 RUN CGO_ENABLED=1 GOOS=linux go build \
     -o airpress \
     -ldflags="-s -w \
-    -X github.com/hipoint-airpress/airpress/consts.AirPressVersion=${AIRPRESS_VERSION}  \
-    -X github.com/hipoint-airpress/airpress/consts.BuildCommit=${BUILD_COMMIT}  \
+    -X github.com/hipoint-airpress/airpress/consts.AirPressVersion=${AIRPRESS_VERSION} \
+    -X github.com/hipoint-airpress/airpress/consts.BuildCommit=${BUILD_COMMIT} \
     -X github.com/hipoint-airpress/airpress/consts.BuildTime=${BUILD_TIME}" \
     -trimpath .
 
-RUN mkdir -p /app/conf \
-    && mkdir /app/resources \
-    && cp -r /go/src/github.com/hipoint-airpress/airpress/airpress /app/ \
-    && cp -r /go/src/github.com/hipoint-airpress/airpress/conf /app/ \
-    && cp -r /go/src/github.com/hipoint-airpress/airpress/resources /app/ \
-    && cp /go/src/github.com/hipoint-airpress/airpress/scripts/docker_init.sh /app/
+RUN mkdir -p /app \
+    && cp -r airpress conf resources /app/ \
+    && cp scripts/entrypoint.sh /app/ \
+    && chmod +x /app/entrypoint.sh
 
-FROM alpine:latest AS prod
+FROM alpine:3 AS prod
 
-COPY --from=builder /app/ /app/
-
-RUN apk add --no-cache tzdata \
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
     && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
     && echo "Asia/Shanghai" > /etc/timezone
 
-RUN chmod +x /app/docker_init.sh
+WORKDIR /app
 
-VOLUME /app
+COPY --from=builder /app/airpress /app/airpress
+COPY --from=builder /app/conf /app/conf
+COPY --from=builder /app/entrypoint.sh /app/entrypoint.sh
+
+# 镜像默认 resources
+COPY --from=builder /app/resources /resources
+
+RUN mkdir -p /app/resources \
+    && chmod +x /app/entrypoint.sh
+
+VOLUME /app/resources
+
 EXPOSE 8080
 
-WORKDIR /app
-CMD /app/docker_init.sh && /app/airpress -config /app/conf/config.yaml
+# 使用 ENTRYPOINT 固定入口
+ENTRYPOINT ["/app/entrypoint.sh"]
