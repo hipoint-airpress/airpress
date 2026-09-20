@@ -3,7 +3,7 @@ RUN apk add --no-cache \
     git \
     ca-certificates \
     gcc \
-    musl-dev
+    g++
 
 COPY . /go/src/github.com/hipoint-airpress/airpress/
 WORKDIR /go/src/github.com/hipoint-airpress/airpress
