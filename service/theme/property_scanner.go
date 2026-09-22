@@ -11,6 +11,7 @@ import (
 
 	"github.com/hipoint-airpress/airpress/config"
 	"github.com/hipoint-airpress/airpress/consts"
+	"github.com/hipoint-airpress/airpress/log"
 	"github.com/hipoint-airpress/airpress/model/dto"
 	"github.com/hipoint-airpress/airpress/util/xerr"
 )
@@ -64,13 +65,17 @@ func (s *propertyScannerImpl) ListAll(ctx context.Context, themeRootPath string)
 	}
 
 	for _, themeDir := range themeDirs {
-		if themeDir.IsDir() {
-			themeProperty, err := s.ReadThemeProperty(ctx, filepath.Join(themeRootPath, themeDir.Name()))
-			if err != nil {
-				return nil, err
-			}
-			themes = append(themes, themeProperty)
+		if !themeDir.IsDir() {
+			continue
 		}
+		themeProperty, err := s.ReadThemeProperty(ctx, filepath.Join(themeRootPath, themeDir.Name()))
+		if err != nil {
+			// 单个主题目录缺失 theme.yaml 或读取失败时跳过该目录，而非中断整体列举，
+			// 避免一个无效目录导致所有主题接口（含 /admin/themes）返回 500。
+			log.CtxWarnf(ctx, "跳过无效主题目录 %s/%s: %v", themeRootPath, themeDir.Name(), err)
+			continue
+		}
+		themes = append(themes, themeProperty)
 	}
 
 	return

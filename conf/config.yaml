@@ -5,8 +5,8 @@ server:
 logging:
   filename: airpress.log
   level:
-    app: info #  debug,info,warn,error
-    gorm: warn #  info,warn,error,silent
+    app: debug #  debug,info,warn,error
+    gorm: info #  info,warn,error,silent
   maxsize: 10 # 单位 megabytes
   maxage: 30 #单位 天
   compress: false # 是否对旧日志使用gzip进行压缩
