@@ -5,7 +5,7 @@ server:
 logging:
   filename: airpress.log
   level:
-    app: debug #  debug,info,warn,error
+    app: info #  debug,info,warn,error
     gorm: info #  info,warn,error,silent
   maxsize: 10 # 单位 megabytes
   maxage: 30 #单位 天
