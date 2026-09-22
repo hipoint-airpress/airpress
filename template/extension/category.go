@@ -2,6 +2,7 @@ package extension
 
 import (
 	"context"
+	"strings"
 
 	"github.com/hipoint-airpress/airpress/model/dto"
 	"github.com/hipoint-airpress/airpress/model/param"
@@ -39,12 +40,37 @@ func (ce *categoryExtension) addListCategoryFunc() {
 	ce.Template.AddFunc("listCategory", listCategory)
 }
 
+// addListCategoryAsTreeFunc 提供按根分类定位分类树的模板函数。
+// rootCategorySlug 为可选参数:
+//   - 不传或传空字符串时返回整个分类森林(顶级分类列表);
+//   - 传入 slug 时返回该分类节点(含 Children 子树),包装为单元素切片
+//     以保持返回类型统一;slug 未匹配时返回空列表,由模板的 {% if %} 兜底。
 func (ce *categoryExtension) addListCategoryAsTreeFunc() {
-	listCategoryAsTree := func() ([]*vo.CategoryVO, error) {
+	listCategoryAsTree := func(rootCategorySlug ...string) ([]*vo.CategoryVO, error) {
 		sort := param.Sort{
 			Fields: []string{"priority,asc"},
 		}
-		return ce.CategoryService.ListAsTree(context.Background(), &sort, false)
+		tree, err := ce.CategoryService.ListAsTree(context.Background(), &sort, false)
+		if err != nil {
+			return nil, err
+		}
+		// 可选参数缺省为空,即取全部分类
+		if len(rootCategorySlug) == 0 || strings.TrimSpace(rootCategorySlug[0]) == "" {
+			return tree, nil
+		}
+		rootSlug := rootCategorySlug[0]
+		// 在树中逐层遍历定位指定 slug 的节点(slug 全局唯一,至多一个匹配)
+		queue := append([]*vo.CategoryVO{}, tree...)
+		for len(queue) > 0 {
+			node := queue[0]
+			queue = queue[1:]
+			if node.Slug == rootSlug {
+				return []*vo.CategoryVO{node}, nil
+			}
+			queue = append(queue, node.Children...)
+		}
+		// 未匹配返回空列表,由模板的 {% if %} 兜底
+		return []*vo.CategoryVO{}, nil
 	}
 	ce.Template.AddFunc("listCategoryAsTree", listCategoryAsTree)
 }
