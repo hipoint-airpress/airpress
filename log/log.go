@@ -7,8 +7,10 @@ import (
 )
 
 var (
-	exportUseLogger      *zap.Logger
-	exportUseSugarLogger *zap.SugaredLogger
+	// 默认使用 no-op logger，避免在 fx 初始化 NewLogger 之前（如单元测试）调用日志函数导致空指针 panic；
+	// 生产环境启动时 NewLogger 会用真实 logger 覆盖。
+	exportUseLogger      = zap.NewNop()
+	exportUseSugarLogger = zap.NewNop().Sugar()
 )
 
 func Debugf(template string, args ...interface{}) {
