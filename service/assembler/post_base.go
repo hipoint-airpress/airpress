@@ -2,6 +2,7 @@ package assembler
 
 import (
 	"context"
+	"strings"
 
 	"github.com/hipoint-airpress/airpress/consts"
 	"github.com/hipoint-airpress/airpress/model/dto"
@@ -41,11 +42,13 @@ func (p *basePostAssembler) ConvertToSimpleDTO(ctx context.Context, post *entity
 		Visits:          post.Visits,
 		DisallowComment: post.DisallowComment,
 		Password:        post.Password,
-		Template:        post.Template,
-		TopPriority:     post.TopPriority,
-		Likes:           post.Likes,
-		WordCount:       post.WordCount,
-		Topped:          post.TopPriority > 0,
+		// 归一化历史脏数据：template 的权威约定是短名（去前缀、去 .tmpl 后缀，
+		// 与 ListCustomTemplates 产出的下拉选项一致），保证 console 下拉匹配。
+		Template:    strings.TrimSuffix(post.Template, ".tmpl"),
+		TopPriority: post.TopPriority,
+		Likes:       post.Likes,
+		WordCount:   post.WordCount,
+		Topped:      post.TopPriority > 0,
 	}
 	postDTO.PostMinimal = *postMinimal
 

@@ -201,7 +201,7 @@ func (t *themeServiceImpl) ListCustomTemplates(ctx context.Context, themeID, pre
 			continue
 		}
 		customName := strings.TrimPrefix(fileName, prefix)
-		customName = strings.TrimSuffix(customName, ".ftl")
+		customName = strings.TrimSuffix(customName, ".tmpl")
 		result = append(result, customName)
 	}
 	return result, nil

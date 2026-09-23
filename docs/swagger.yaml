@@ -6638,7 +6638,7 @@ paths:
         required: true
         type: string
       - description: 文件相对路径
-        example: header.ftl
+        example: header.tmpl
         in: query
         name: path
         required: true
@@ -7036,7 +7036,7 @@ paths:
       description: 按文件相对路径返回当前激活主题中该文件的文本内容
       parameters:
       - description: 文件相对路径
-        example: header.ftl
+        example: header.tmpl
         in: query
         name: path
         required: true

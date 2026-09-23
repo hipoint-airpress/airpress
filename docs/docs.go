@@ -8382,7 +8382,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "example": "header.ftl",
+                        "example": "header.tmpl",
                         "description": "文件相对路径",
                         "name": "path",
                         "in": "query",
@@ -8991,7 +8991,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "example": "header.ftl",
+                        "example": "header.tmpl",
                         "description": "文件相对路径",
                         "name": "path",
                         "in": "query",

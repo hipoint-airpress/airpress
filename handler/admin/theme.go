@@ -100,7 +100,7 @@ func (t *ThemeHandler) ListThemeFileByID(ctx *gin.Context) (interface{}, error) 
 // @Description  按文件相对路径返回当前激活主题中该文件的文本内容
 // @Tags         Admin.Theme
 // @Produce      json
-// @Param        path  query  string  true  "文件相对路径"  example(header.ftl)
+// @Param        path  query  string  true  "文件相对路径"  example(header.tmpl)
 // @Security     AdminApiKey
 // @Success      200  {object}  dto.BaseDTO
 // @Failure      400  {object}  dto.BaseDTO
@@ -124,7 +124,7 @@ func (t *ThemeHandler) GetThemeFileContent(ctx *gin.Context) (interface{}, error
 // @Tags         Admin.Theme
 // @Produce      json
 // @Param        themeID  path  string  true  "主题ID"  example(default-theme)
-// @Param        path     query string  true  "文件相对路径"  example(header.ftl)
+// @Param        path     query string  true  "文件相对路径"  example(header.tmpl)
 // @Security     AdminApiKey
 // @Success      200  {object}  dto.BaseDTO
 // @Failure      400  {object}  dto.BaseDTO

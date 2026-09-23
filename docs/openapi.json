@@ -9401,7 +9401,7 @@
                 "summary": "获取当前激活主题指定文件内容",
                 "parameters": [
                     {
-                        "example": "header.ftl",
+                        "example": "header.tmpl",
                         "description": "文件相对路径",
                         "name": "path",
                         "in": "query",
@@ -10111,7 +10111,7 @@
                         }
                     },
                     {
-                        "example": "header.ftl",
+                        "example": "header.tmpl",
                         "description": "文件相对路径",
                         "name": "path",
                         "in": "query",

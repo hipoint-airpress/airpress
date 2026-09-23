@@ -8376,7 +8376,7 @@
                 "parameters": [
                     {
                         "type": "string",
-                        "example": "header.ftl",
+                        "example": "header.tmpl",
                         "description": "文件相对路径",
                         "name": "path",
                         "in": "query",
@@ -8985,7 +8985,7 @@
                     },
                     {
                         "type": "string",
-                        "example": "header.ftl",
+                        "example": "header.tmpl",
                         "description": "文件相对路径",
                         "name": "path",
                         "in": "query",
