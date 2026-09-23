@@ -45,6 +45,22 @@ type SheetModel struct {
 	PostAuthentication *authentication.PostAuthentication
 }
 
+// resolveSheetTemplate 返回页面详情应使用的模板名：优先使用页面的自定义模板（sheet.template），
+// 若该字段未设置或对应模板文件不存在，则回退到默认 sheet 模板，避免渲染因模板缺失而报错。
+func (s *SheetModel) resolveSheetTemplate(ctx context.Context, sheet *entity.Post) string {
+	if sheet.Template == "" {
+		return "sheet"
+	}
+	// template 存短名（与 console 下拉选项、ListCustomTemplates 一致），
+	// 主题内自定义模板文件按 <sheet_ 前缀><短名>.tmpl 命名；TrimSuffix 兜底历史脏数据。
+	name := consts.ThemeCustomSheetPrefix + strings.TrimSuffix(sheet.Template, ".tmpl")
+	exist, err := s.ThemeService.TemplateExist(ctx, name+".tmpl")
+	if err != nil || !exist {
+		return "sheet"
+	}
+	return name
+}
+
 func (s *SheetModel) Content(ctx context.Context, sheet *entity.Post, token string, model template.Model) (string, error) {
 	if sheet == nil {
 		return "", xerr.WithStatus(nil, int(xerr.StatusBadRequest)).WithMsg("查询不到文章信息")
@@ -104,7 +120,7 @@ func (s *SheetModel) Content(ctx context.Context, sheet *entity.Post, token stri
 
 	s.SheetService.IncreaseVisit(ctx, sheet.ID)
 
-	return s.ThemeService.Render(ctx, "sheet")
+	return s.ThemeService.Render(ctx, s.resolveSheetTemplate(ctx, sheet))
 }
 
 func (s *SheetModel) AdminPreviewContent(ctx context.Context, sheet *entity.Post, model template.Model) (string, error) {
@@ -151,5 +167,5 @@ func (s *SheetModel) AdminPreviewContent(ctx context.Context, sheet *entity.Post
 		model["meta_keywords"] = metaKeywords.String()
 	}
 
-	return s.ThemeService.Render(ctx, "sheet")
+	return s.ThemeService.Render(ctx, s.resolveSheetTemplate(ctx, sheet))
 }

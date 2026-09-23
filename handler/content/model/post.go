@@ -54,6 +54,22 @@ type PostModel struct {
 	PostAuthentication  *authentication.PostAuthentication
 }
 
+// resolvePostTemplate 返回文章详情应使用的模板名：优先使用文章的自定义模板（post.template），
+// 若该字段未设置或对应模板文件不存在，则回退到默认 post 模板，避免渲染因模板缺失而报错。
+func (p *PostModel) resolvePostTemplate(ctx context.Context, post *entity.Post) string {
+	if post.Template == "" {
+		return "post"
+	}
+	// template 存短名（与 console 下拉选项、ListCustomTemplates 一致），
+	// 主题内自定义模板文件按 <post_ 前缀><短名>.tmpl 命名；TrimSuffix 兜底历史脏数据。
+	name := consts.ThemeCustomPostPrefix + strings.TrimSuffix(post.Template, ".tmpl")
+	exist, err := p.ThemeService.TemplateExist(ctx, name+".tmpl")
+	if err != nil || !exist {
+		return "post"
+	}
+	return name
+}
+
 func (p *PostModel) Content(ctx context.Context, post *entity.Post, token string, model template.Model) (string, error) {
 	if post == nil {
 		return "", xerr.WithStatus(nil, int(xerr.StatusBadRequest)).WithMsg("查询不到文章信息")
@@ -141,7 +157,7 @@ func (p *PostModel) Content(ctx context.Context, post *entity.Post, token string
 
 	model["target"] = postVO
 	model["type"] = "post"
-	return p.ThemeService.Render(ctx, "post")
+	return p.ThemeService.Render(ctx, p.resolvePostTemplate(ctx, post))
 }
 
 func (p *PostModel) List(ctx context.Context, page int, model template.Model) (string, error) {
@@ -288,5 +304,5 @@ func (p *PostModel) AdminPreview(ctx context.Context, post *entity.Post, model t
 
 	model["target"] = postVO
 	model["type"] = "post"
-	return p.ThemeService.Render(ctx, "post")
+	return p.ThemeService.Render(ctx, p.resolvePostTemplate(ctx, post))
 }

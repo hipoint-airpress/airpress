@@ -82,13 +82,14 @@ func (s sheetServiceImpl) ConvertParam(ctx context.Context, sheetParam *param.Sh
 		Password:        sheetParam.Password,
 		MetaDescription: sheetParam.MetaDescription,
 		MetaKeywords:    sheetParam.MetaKeywords,
-		Template:        sheetParam.Template,
-		Thumbnail:       sheetParam.Thumbnail,
-		Title:           sheetParam.Title,
-		TopPriority:     sheetParam.TopPriority,
-		Status:          sheetParam.Status,
-		Summary:         sheetParam.Summary,
-		EditTime:        util.TimePtr(time.Now()),
+		// 存短名（去 .tmpl 后缀），与 ListCustomTemplates 的下拉值约定一致
+		Template:    strings.TrimSuffix(sheetParam.Template, ".tmpl"),
+		Thumbnail:   sheetParam.Thumbnail,
+		Title:       sheetParam.Title,
+		TopPriority: sheetParam.TopPriority,
+		Status:      sheetParam.Status,
+		Summary:     sheetParam.Summary,
+		EditTime:    util.TimePtr(time.Now()),
 	}
 	if sheetParam.EditorType != nil {
 		sheet.EditorType = *sheetParam.EditorType

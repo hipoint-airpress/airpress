@@ -161,14 +161,15 @@ func (p postServiceImpl) ConvertParam(ctx context.Context, postParam *param.Post
 		Password:        postParam.Password,
 		MetaDescription: postParam.MetaDescription,
 		MetaKeywords:    postParam.MetaKeywords,
-		Template:        postParam.Template,
-		Thumbnail:       postParam.Thumbnail,
-		Title:           postParam.Title,
-		TopPriority:     postParam.TopPriority,
-		Status:          postParam.Status,
-		EditTime:        util.TimePtr(time.Now()),
-		Summary:         postParam.Summary,
-		FormatContent:   postParam.Content,
+		// 存短名（去 .tmpl 后缀），与 ListCustomTemplates 的下拉值约定一致
+		Template:      strings.TrimSuffix(postParam.Template, ".tmpl"),
+		Thumbnail:     postParam.Thumbnail,
+		Title:         postParam.Title,
+		TopPriority:   postParam.TopPriority,
+		Status:        postParam.Status,
+		EditTime:      util.TimePtr(time.Now()),
+		Summary:       postParam.Summary,
+		FormatContent: postParam.Content,
 	}
 	if postParam.EditorType != nil {
 		post.EditorType = *postParam.EditorType
