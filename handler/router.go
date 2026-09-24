@@ -56,6 +56,8 @@ func (s *Server) RegisterRouters() {
 			staticRouter.Use(middleware.NewCacheControlMiddleware(middleware.WithMaxAge(time.Hour*24*7)).CacheControl()).
 				StaticFS(consts.AirPressUploadDir, gin.Dir(s.Config.AirPress.UploadDir, false))
 			staticRouter.StaticFS("/themes/", gin.Dir(s.Config.AirPress.ThemeDir, false))
+			// 全局共享第三方静态资源(common 命名空间即"全站公共",主题无需自带副本)
+			staticRouter.StaticFS("/vendor/", gin.Dir(filepath.Join(s.Config.AirPress.TemplateDir, "common", "vendor"), false))
 		}
 		{
 			adminAPIRouter := router.Group("/api/admin")
