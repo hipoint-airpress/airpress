@@ -162,19 +162,29 @@ func (p postServiceImpl) ConvertParam(ctx context.Context, postParam *param.Post
 		MetaDescription: postParam.MetaDescription,
 		MetaKeywords:    postParam.MetaKeywords,
 		// 存短名（去 .tmpl 后缀），与 ListCustomTemplates 的下拉值约定一致
-		Template:      strings.TrimSuffix(postParam.Template, ".tmpl"),
-		Thumbnail:     postParam.Thumbnail,
-		Title:         postParam.Title,
-		TopPriority:   postParam.TopPriority,
-		Status:        postParam.Status,
-		EditTime:      util.TimePtr(time.Now()),
-		Summary:       postParam.Summary,
-		FormatContent: postParam.Content,
+		Template:    strings.TrimSuffix(postParam.Template, ".tmpl"),
+		Thumbnail:   postParam.Thumbnail,
+		Title:       postParam.Title,
+		TopPriority: postParam.TopPriority,
+		Status:      postParam.Status,
+		EditTime:    util.TimePtr(time.Now()),
+		Summary:     postParam.Summary,
 	}
 	if postParam.EditorType != nil {
 		post.EditorType = *postParam.EditorType
 	} else {
 		post.EditorType = consts.EditorTypeMarkdown
+	}
+	// 服务端统一渲染:markdown 类型的 FormatContent 由 OriginalContent 转 HTML,
+	// 不信任客户端提交的 Content;富文本或原文为空时原样透传。
+	if post.EditorType == consts.EditorTypeMarkdown && postParam.OriginalContent != "" {
+		htmlContent, err := util.MarkdownToHTML(postParam.OriginalContent)
+		if err != nil {
+			return nil, xerr.BadParam.Wrapf(err, "convert markdown err").WithStatus(xerr.StatusBadRequest)
+		}
+		post.FormatContent = htmlContent
+	} else {
+		post.FormatContent = postParam.Content
 	}
 	if postParam.EditTime != nil {
 		post.EditTime = util.TimePtr(time.UnixMilli(*postParam.EditTime))

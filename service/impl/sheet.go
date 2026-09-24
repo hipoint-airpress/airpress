@@ -16,6 +16,7 @@ import (
 	"github.com/hipoint-airpress/airpress/model/param"
 	"github.com/hipoint-airpress/airpress/service"
 	"github.com/hipoint-airpress/airpress/util"
+	"github.com/hipoint-airpress/airpress/util/xerr"
 )
 
 type sheetServiceImpl struct {
@@ -78,7 +79,6 @@ func (s sheetServiceImpl) ConvertParam(ctx context.Context, sheetParam *param.Sh
 		Type:            consts.PostTypeSheet,
 		DisallowComment: sheetParam.DisallowComment,
 		OriginalContent: sheetParam.OriginalContent,
-		FormatContent:   sheetParam.Content,
 		Password:        sheetParam.Password,
 		MetaDescription: sheetParam.MetaDescription,
 		MetaKeywords:    sheetParam.MetaKeywords,
@@ -95,6 +95,17 @@ func (s sheetServiceImpl) ConvertParam(ctx context.Context, sheetParam *param.Sh
 		sheet.EditorType = *sheetParam.EditorType
 	} else {
 		sheet.EditorType = consts.EditorTypeMarkdown
+	}
+	// 服务端统一渲染:markdown 类型的 FormatContent 由 OriginalContent 转 HTML,
+	// 不信任客户端提交的 Content;富文本或原文为空时原样透传。
+	if sheet.EditorType == consts.EditorTypeMarkdown && sheetParam.OriginalContent != "" {
+		htmlContent, err := util.MarkdownToHTML(sheetParam.OriginalContent)
+		if err != nil {
+			return nil, xerr.BadParam.Wrapf(err, "convert markdown err").WithStatus(xerr.StatusBadRequest)
+		}
+		sheet.FormatContent = htmlContent
+	} else {
+		sheet.FormatContent = sheetParam.Content
 	}
 
 	sheet.WordCount = util.HTMLFormatWordCount(sheet.FormatContent)
