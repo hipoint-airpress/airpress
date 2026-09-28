@@ -2,6 +2,7 @@ package template
 
 import (
 	"context"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"io/fs"
@@ -260,6 +261,17 @@ func (t *Template) addUtilFunc() {
 	// pongo2 没有 printf/print，直接复用标准库（变参 + any 形参可通过其类型校验）
 	t.funcMap["printf"] = fmt.Sprintf
 	t.funcMap["print"] = fmt.Sprint
+	// from_json 将 JSON 字符串解析为任意 JSON 值（对象/数组/标量），
+	// 供主题模板消费文章/页面元数据中的结构化配置。
+	// 入参放宽为 any（pongo2 对函数实参做严格类型校验，由 cast 容错转换）；
+	// 解析失败或非 JSON 文本时返回 nil，模板中可用 default_if_none 兜底。
+	t.funcMap["from_json"] = func(v any) any {
+		var result any
+		if err := json.Unmarshal([]byte(cast.ToString(v)), &result); err != nil {
+			return nil
+		}
+		return result
+	}
 }
 
 // isTemplateEvent 判断文件事件是否需要触发模板重载。

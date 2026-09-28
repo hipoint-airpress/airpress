@@ -1,4 +1,5 @@
 .claude/
+.trae/
 .codegraph/
 /.idea
 /logs
