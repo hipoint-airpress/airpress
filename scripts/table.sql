@@ -160,7 +160,7 @@ create table if not exists meta
     update_time datetime(6)   null,
     meta_key    varchar(255)  not null,
     post_id     int           not null,
-    meta_value  varchar(1023) not null
+    meta_value  text          not null
 ) ENGINE = INNODB
   DEFAULT charset = utf8mb4;
 

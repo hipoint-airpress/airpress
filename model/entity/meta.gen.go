@@ -20,7 +20,7 @@ type Meta struct {
 	UpdateTime *time.Time      `gorm:"column:update_time;type:datetime" json:"update_time"`
 	MetaKey    string          `gorm:"column:meta_key;type:varchar(255);not null" json:"meta_key"`
 	PostID     int32           `gorm:"column:post_id;type:int;not null" json:"post_id"`
-	MetaValue  string          `gorm:"column:meta_value;type:varchar(1023);not null" json:"meta_value"`
+	MetaValue  string          `gorm:"column:meta_value;type:text;not null" json:"meta_value"`
 }
 
 // TableName Meta's table name
