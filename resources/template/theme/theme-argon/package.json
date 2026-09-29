@@ -4,9 +4,8 @@
   "version": "1.3.5",
   "type": "module",
   "scripts": {
-    "build": "vite build && sass src/style.scss style.css --style=expanded --no-source-map",
-    "build:js": "vite build",
-    "build:css": "sass src/style.scss style.css --style=expanded --no-source-map",
+    "build": "vite build && node scripts/build-vendor.mjs",
+    "build:vendor": "node scripts/build-vendor.mjs",
     "watch": "vite build --watch"
   },
   "devDependencies": {
