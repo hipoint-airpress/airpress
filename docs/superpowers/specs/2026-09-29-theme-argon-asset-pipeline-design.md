@@ -48,7 +48,11 @@ Halo 模板以 `theme_base/assets/...?version={{ theme.Version }}` 的固定相�
 
 ## 4. 第三方库审计与处置（审计后精简）
 
-对 merged 中的约 20 个库逐一核对调用点（全局变量 / jQuery 插件 / CSS 类名）。保留在用、删除未用。审计发现三类特殊情形：
+对 merged 中的约 20 个库逐一核对调用点（全局变量 / jQuery 插件 / CSS 类名）。保留在用、删除未用。
+
+**关键发现（修订取源策略）：** 第三方库的独立源文件**不存在**——它们仅以拼接形式存在于 `assets/argon_js_merged.js` / `assets/argon_css_merged.css` 内，且二者**含分库标记**（JS 如 `/* assets/vendor/jquery/jquery.min.js */`，CSS 如 `/* assets/css/argon.min.css */`）。因此取源策略改为：**从 merged 按标记精确拆分**为 `src/vendor/` 下独立文件，再由构建管线打包，保留原版本、零行为风险。`package.json` 中版本不匹配（见 4.1）的 npm 依赖在重构后清理。
+
+审计发现三类特殊情形：
 
 ### 4.1 版本陷阱（不能无脑 npm 升级）
 
@@ -83,24 +87,32 @@ Halo 模板以 `theme_base/assets/...?version={{ theme.Version }}` 的固定相�
 | clamp-js | 本地/npm | 进 vendor（已确认 clamp 调用） |
 | hljs + line-numbers | 本地 | JS 进 vendor；**样式剥离**（动态主题保留静态目录） |
 | headindex | 本地 | 进 vendor（已确认调用） |
-| `navigator.clipboard` | 浏览器原生 | 不是库，无需打包 |
-| jquery.easing / pickr / sharejs | 本地 | 源码暂无调用痕迹 → 审计后若确认未用则**删除** |
+| clipboard.js | 本地 | 进 vendor（已确认 `new ClipboardJS(...)`，`src/argontheme.js:2693`） |
+| pickr | 本地 | 进 vendor（已确认 `new Pickr(...)`，`src/argontheme.js:2483`） |
+| jquery.easing | 本地 | 进 vendor（已确认 `.animate(..., 'easeOutExpo'/'easeOutCirc')`，jQuery 核心无此命名缓动） |
+| **sharejs** | 本地 | **删除**（全库零调用：`grep` 命中 0） |
+| Argon DS JS（`assets/js/argon.min.js`） | 独立文件 | 进 vendor（Argon Design System，Creative Tim；依赖 `$`/`Headroom`/`noUiSlider`） |
 
-> 实现阶段需对每个「已确认」项做一次真实调用点 grep 复核，并以「功能预览无误」为最终判据。
+> `navigator.clipboard` 是浏览器原生 API，与 `clipboard.js` 库无关，二者并存。
+> 审计已完成（本表即最终结论）；实现阶段再对每个「保留」项与「删除」项做一次 grep 复核作为验证步骤。
 
-## 5. vite 配置方案（弃用 lib 单入口，改多入口标准构建）
+## 5. 构建机制（关键约束：经典脚本不能走 ESM 打包）
 
-当前 `vite.config.js` 用 `lib` 模式只打包 `argontheme.js`。改为**多入口标准构建**（非 lib 模式，便于固定名 + 全局变量策略）：
+**约束：** jQuery/Bootstrap/popper 等是 UMD 全局脚本；`src/argontheme.js` 顶部用 `var argonConfig`（依赖全局作用域），且大量使用全局 `$`/`jQuery`。若交给 Vite 以 ESM 打包：UMD 库会走 CommonJS 分支、不再挂到 `window`；argontheme 的 `var argonConfig` 会变成模块作用域、与 `head.tmpl` 注入的全局 `window.argonConfig` 脱节，导致主题配置全部失效。因此**经典脚本必须「拼接顺序 + 压缩」，不能 ESM bundle**。
 
-- `src/entries/vendor.js`：import 所有第三方（npm 安装 + `src/vendor/*` 本地副本），在末尾显式把需要的全局变量挂到 `window`（如 `window.$ = window.jQuery = $`、`window.Headroom = ...` 等，保证 `argontheme.js` 以全局方式使用）；并 `import` 第三方 CSS（bootstrap、font-awesome 4）。
-- `src/entries/app.js`：`import '../argontheme.js'`（只用全局变量、不重新打包依赖）+ `import '../style.scss'` + `import '../vendor/argon.min.js'`（并入原 `assets/js/argon.min.js`）。
-- `vite.config.js` 删除 `lib` 配置与 `copy-to-root` 插件（产物直接输出到 `assets/`）；保留 `build.emptyOutDir: false`。
-- `package.json` 脚本：
-  - `"build": "vite build"`（取代现 `vite build && sass ...`，SCSS 由 vite + sass 插件处理并压缩）。
-  - `"watch": "vite build --watch"`。
-  - 移除 `build:js` / `build:css` 拆分（合并为单条 `build`）。
+机制（已确认）：
 
-注意：`src/argontheme.js` 顶部有 `if (typeof(argonConfig) == "undefined")` 的全局声明，确认其不依赖模块作用域——作为入口导入时仍工作（它本就依赖全局 `$` 与 `argonConfig`）。
+- **经典脚本（vendor.js / app.js）**：由 `scripts/build-vendor.mjs` 读取 `src/vendor/` 下按固定顺序拆出的源文件，**顺序拼接**后用 esbuild 压缩（`transform(code, { minify: true, loader: 'js' }`）输出固定名文件。esbuild 是 Vite 的内置引擎，此处直接用于保留全局作用域语义。顺序沿用 merged 原顺序（jquery → popper → bootstrap → …，去重，剔除 sharejs），Argon DS 的 `argon.min.js` 置于末尾。
+- **第三方 CSS（vendor.css）**：同源由 `build-vendor.mjs` 拼接 5 个 CSS 片段（argon.min.css → font-awesome → iziToast → pickr → fancybox）后 esbuild 压缩，输出 `assets/vendor.css`。字体 `url('vendor/font-awesome/fonts/...')` 在 merged 中**已是相对 `assets/` 的路径**，落到 `assets/vendor.css` 后无需改写，字体目录 `assets/vendor/font-awesome/fonts/` 仍作静态资源保留。
+- **主题自有 CSS（app.css）**：由 Vite 经 sass 编译 `src/style.scss` 并压缩（体现「Vite 管理主题 scss」），输出固定名 `assets/app.css`。
+
+`vite.config.js` 改造：
+
+- `build.lib` 入口服从 `src/entries/style.js`（`import '../style.scss'`），`formats: ['iife']`、`fileName: 'app'`、`outDir: 'assets'`、`emptyOutDir: false`、启用 CSS 压缩 → 产出 `assets/app.js`（空壳，将被 `build-vendor.mjs` 覆盖）+ `assets/app.css`。
+- `build.rollupOptions.output.assetFileNames: '[name][extname]'` 强制固定名、无 hash。
+- 删除原 `lib`/`copy-to-root` 逻辑（产物直接落在 `assets/`）。
+- `package.json` 脚本改为 `"build": "vite build && node scripts/build-vendor.mjs"`、`"watch": "vite build --watch"`，移除 `build:js`/`build:css` 拆分（sass 由 Vite 接管）。
+- 清理 `package.json` 中未被取源使用的 npm 依赖（重构后以实际拆分来源为准核对）。
 
 ## 6. 模板改动
 
@@ -112,7 +124,7 @@ Halo 模板以 `theme_base/assets/...?version={{ theme.Version }}` 的固定相�
 - `module/scripts.tmpl`：
   - 第 2 行 `argontheme.js` → `assets/app.js`
   - 第 13 行动态高亮主题 `assets/vendor/highlight/styles/...` → **保留不变**。
-- `head.tmpl` 第 38 行 `assets/js/argon.min.js`：并入 `app.js`（通过 `src/entries/app.js` 导入），删除该静态文件与旧引用。
+- `head.tmpl` 第 38 行 `assets/js/argon.min.js`：已并入 `vendor.js`（作为 Argon DS 第三方脚本置于末尾），删除该静态文件与旧引用。
 
 ## 7. 删除项与 `.gitignore`
 
