@@ -1,0 +1,62 @@
+{# head 部分：meta、外部样式与脚本（CSS 变量与 argonConfig 由下方 <style>/<script> 根据 settings 直接输出） #}
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta property="og:site_name" content="{{ blog_title }}">
+<meta property="og:type" content="article">
+<meta name="author" content="{{ user.Nickname }}">
+<meta name="keywords" content="{{ meta_keywords|default:seo_keywords }}">
+<meta name="description" content="{{ meta_description|default:seo_description }}">
+<link rel="alternate" type="application/rss+xml" title="atom 1.0" href="{{ atom_url }}">
+{% if post.Thumbnail %}
+    <meta property="og:image" content="{{ post.Thumbnail }}">
+{% endif %}
+
+<meta name="theme-color" content="{{ settings.theme_color|default:"#5e72e4" }}">
+<meta name="theme-color-rgb" content="{{ settings.theme_color_rgb|default:"94, 114, 228" }}">
+<meta name="theme-card-radius" content="{{ settings.card_radius|default:"4" }}">
+<meta name="theme-version" content="{{ theme.Version }}">
+
+<link rel="stylesheet" href="{{ theme_base }}/assets/vendor.css?version={{ theme.Version }}">
+<link rel="stylesheet" href="{{ theme_base }}/assets/app.css?version={{ theme.Version }}">
+<style>
+{# 主题色 / 卡片圆角 #}
+:root{
+    --themecolor: {{ settings.theme_color|default:"#5e72e4" }};
+    --card-radius: {{ settings.card_radius|default:"4" }}px;
+    --page-bg-opacity: {{ settings.page_background_opacity|default:"1" }};
+    {% if settings.page_background_url %}--page-bg-image: url("{{ settings.page_background_url|safe }}");{% endif %}
+    {% if settings.page_background_dark_url %}--page-bg-dark-image: url("{{ settings.page_background_dark_url|safe }}");{% endif %}
+    {% if settings.sidebar_auther_image or user.Avatar %}--sidebar-author-image: url("{{ settings.sidebar_auther_image|default:user.Avatar }}");{% endif %}
+    {% if not settings.banner_background_bing and settings.banner_background_url and settings.banner_background_url != "--bing--" %}--banner-bg-image: url("{{ settings.banner_background_url|safe }}");{% endif %}
+    {% if post.Thumbnail and settings.banner_size != "hide" %}--post-banner-image: url("{{ post.Thumbnail }}");{% endif %}
+}
+</style>
+{% if not settings.disable_googlefont %}
+    <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Open+Sans:300,400,600,700|Noto+Serif+SC:300,600&display=swap">
+{% endif %}
+<script src="{{ theme_base }}/assets/vendor.js?version={{ theme.Version }}"></script>
+<script>
+{# argonConfig：argontheme.js 各功能模块依赖的全局配置对象，由模板根据 settings 直接输出 #}
+if (typeof(argonConfig) == "undefined"){var argonConfig = {};}
+argonConfig.wp_path = "/";
+argonConfig.search_path = "{{ blog_url }}/search?keyword=";
+argonConfig.language = "zh-CN";
+argonConfig.dateFormat = "YMD";
+argonConfig.zoomify = false;
+argonConfig.pangu = {% if settings.enable_pangu %}"true"{% else %}"false"{% endif %};
+argonConfig.lazyload = {% if settings.enable_lazyload %}{threshold: 800, effect: "fadeIn"}{% else %}false{% endif %};
+argonConfig.fold_long_comments = "false";
+argonConfig.fold_long_shuoshuo = "false";
+argonConfig.disable_pjax = true;
+argonConfig.pjax_animation_durtion = 0;
+argonConfig.headroom = "true";
+argonConfig.waterflow_columns = "1";
+argonConfig.code_highlight = {enable: {% if settings.enable_code_highlight %}true{% else %}false{% endif %}, hide_linenumber: false, transparent_linenumber: false, break_line: false};
+argonConfig.darkmode_autoswitch = "{{ settings.darkmode_autoswitch|default:"false" }}";
+argonConfig.math_render = "{{ settings.math_render }}";
+argonConfig.bing = {% if settings.banner_background_bing or settings.banner_background_url == "--bing--" %}true{% else %}false{% endif %};
+document.documentElement.classList.remove("no-js");
+</script>
+
+{% include "common/macro/head" %}
+
