@@ -542,3 +542,46 @@ Expected: 可见本计划各任务的提交。向用户汇报：删除的 merged
 **占位符扫描：** 无 TBD/TODO；所有步骤含可执行命令或完整代码；esbuild 版本要求先以实际安装版本回填（Task 4 Step 2 给出获取命令）。
 
 **类型/命名一致性：** 产物名统一为 `vendor.js`/`vendor.css`/`app.js`/`app.css`；入口 `src/entries/style.js`；脚本 `scripts/split-merged.mjs`、`scripts/build-vendor.mjs` 全篇一致。
+
+---
+
+## 验证记录（执行后补录）
+
+**执行日期：** 2026-09-29
+**分支：** `refactor/vite-asset-pipeline`
+**提交链：** `b76dc03`(拆分) → `275db24`(迁移Argon DS) → `360010e`(构建脚本) → `1944c61`(Vite配置) → `b32d3fb`(模板引用) → `bcbcd06`(清理依赖)
+
+### Task 8 Step 1–2 构建产物断言（实际输出）
+
+```
+assets/app.css      129918 B   行数=1   无 /* / 无 $vite$ 标记
+assets/app.js        77091 B   行数=16  含 argonConfig（全局作用域保留）
+assets/vendor.css   348115 B   行数=1   无 /*
+assets/vendor.js    548554 B   行数=76  含 jQuery/Headroom/iziToast/noUiSlider/tippy/ClipboardJS/Pickr；无 sharejs
+CSS 合计 478033 字节  < 514000（原 argon_css_merged 358106 + style.css 156668 未压缩总量）
+```
+
+**说明：**
+- `app.css`/`vendor.css` 为压缩单行（CSS 无多行模板字面量）；`app.js`/`vendor.js` 因源码含多行 HTML 字面量保留换行，属正确行为（代码空白仍压缩）。
+- **CSS 压缩目标达成**：压缩态 478KB vs 原未压缩态 515KB。
+
+### Task 8 Step 3 运行时 Halo 预览（本环境无法启动，需用户确认）
+
+1. 页面样式正常、无 404、无 `jQuery is not defined`/`Headroom is not defined`/`iziToast is not defined`
+2. 夜间模式、pjax、fancybox、代码高亮、复制、Pickr 正常
+3. `fa fa-*` 图标正常（`assets/vendor/font-awesome/fonts/*` 可访问）
+4. 代码高亮主题正常（`assets/vendor/highlight/styles/<theme>.css` 可访问）
+
+### 关键发现：`.gitignore` 模式（修正 Task 9 Step 1 预期）
+
+父级 `resources/template/theme/.gitignore` 含 `*` 规则，所有主题文件默认被忽略，需 `git add -f`；旧 `style.css`/`argontheme.js`/`argon_*.css/js` **从未被跟踪**。**构建产物被忽略是既有模式、符合预期**，非缺陷。
+
+### Dev 环境注意：DrvFs 重命名权限
+
+`/mnt/d`（WSL DrvFs）上 `npm install` 剪枝目录偶发 `EACCES`（重命名）。规避：用 `npm install --package-lock-only` 重建锁文件；纯构建不受影响。
+
+### 其他技术结论
+
+- **`strip-vite-css-marker` 插件确属必要**：无插件时 `app.css` 含 `/*$vite$:1*/`（grep 计 1），带插件为 0；源码 `node_modules/vite/dist/node/chunks/node.js:30355` 的 `finalizeCss()` 无条件追加该标记。
+- **esbuild 非 Vite 8 自带**（Vite 8 用 Rolldown），已在 devDependencies 声明 `^0.28.0`。
+- **sharejs 已精简删除**（零调用）。
