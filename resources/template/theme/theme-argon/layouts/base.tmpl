@@ -1,0 +1,34 @@
+{# 基础布局：整页骨架，各页面通过 extends + block 复用 #}
+<!DOCTYPE html>
+<html lang="zh" class="no-js{% if settings.page_layout == "single" %} single-column{% elif settings.page_layout == "double-reverse" %} double-column-reverse{% endif %}{% if settings.immersion_color %} immersion-color{% endif %}{% if settings.amoled_dark %} amoled-dark{% endif %}{% if settings.darkmode_autoswitch == "alwayson" %} darkmode{% endif %}{% if settings.page_background_banner_style %} page-bg-banner-style{% endif %}{% if settings.page_background_dark_url %} has-page-dark-image{% endif %}{% if settings.show_toolbar_mask %} show-toolbar-mask{% endif %}{% if settings.toolbar_blur %} toolbar-blur{% endif %}{% if settings.banner_size == "mini" %} banner-mini{% elif settings.banner_size == "hide" %} no-banner{% elif settings.banner_size == "fullscreen" %} banner-as-cover{% endif %}">
+<head>
+    {% include "solstice23_argon/module/head" %}
+    <title>{% block title %}{{ blog_title }}{% endblock %}</title>
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+{% include "solstice23_argon/module/toolbar" %}
+{% include "solstice23_argon/module/modals" %}
+{% block banner %}
+    {% include "solstice23_argon/module/banner" %}
+{% endblock %}
+{% include "solstice23_argon/module/fabs" %}
+
+<div id="content" class="site-content">
+    {% block page_information %}{% endblock %}
+    {% block sidebar %}
+        {% if settings.page_layout != "single" %}
+            {% include "solstice23_argon/module/sidebar" %}
+        {% endif %}
+    {% endblock %}
+    <div id="primary" class="content-area">
+        <main id="main" class="site-main {% block main_class %}{% endblock %}" role="main">
+            {% block content %}{% endblock %}
+            {% include "solstice23_argon/module/footer" %}
+        </main>
+    </div>
+</div>
+{% include "solstice23_argon/module/scripts" %}
+{% block scripts_extra %}{% endblock %}
+</body>
+</html>

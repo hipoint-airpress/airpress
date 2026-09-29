@@ -13,7 +13,7 @@
 
 <meta name="theme-color" content="{{ settings.theme_color|default:"#5e72e4" }}">
 <meta name="theme-color-rgb" content="{{ settings.theme_color_rgb|default:"94, 114, 228" }}">
-<meta name="theme-card-radius" content="{{ settings.card_radius|default:"4" }}">
+<meta name="theme-card-radius" content="4">
 <meta name="theme-version" content="{{ theme.Version }}">
 
 <link rel="stylesheet" href="{{ theme_base }}/assets/vendor.css?version={{ theme.Version }}">
@@ -22,7 +22,7 @@
 {# 主题色 / 卡片圆角 #}
 :root{
     --themecolor: {{ settings.theme_color|default:"#5e72e4" }};
-    --card-radius: {{ settings.card_radius|default:"4" }}px;
+    --card-radius: 4px;
     --page-bg-opacity: {{ settings.page_background_opacity|default:"1" }};
     {% if settings.page_background_url %}--page-bg-image: url("{{ settings.page_background_url|safe }}");{% endif %}
     {% if settings.page_background_dark_url %}--page-bg-dark-image: url("{{ settings.page_background_dark_url|safe }}");{% endif %}
