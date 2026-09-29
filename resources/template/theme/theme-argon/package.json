@@ -1,0 +1,32 @@
+{
+  "name": "theme-argon",
+  "private": true,
+  "version": "1.3.5",
+  "type": "module",
+  "scripts": {
+    "build": "vite build && sass src/style.scss style.css --style=expanded --no-source-map",
+    "build:js": "vite build",
+    "build:css": "sass src/style.scss style.css --style=expanded --no-source-map",
+    "watch": "vite build --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0",
+    "sass": "^1.69.0",
+    "vite": "^8.0.0"
+  },
+  "dependencies": {
+    "@fancyapps/fancybox": "^3.5.7",
+    "bootstrap": "^4.6.2",
+    "clamp-js": "^0.7.0",
+    "headroom.js": "^0.12.0",
+    "highlight.js": "^9.18.5",
+    "highlightjs-line-numbers.js": "^2.9.1",
+    "izitoast": "^1.4.0",
+    "jquery": "^4.0.0",
+    "jquery-pjax": "^2.0.1",
+    "nouislider": "^15.8.1",
+    "nprogress": "^0.2.0",
+    "popper.js": "^1.16.1",
+    "tippy.js": "^6.3.7"
+  }
+}
