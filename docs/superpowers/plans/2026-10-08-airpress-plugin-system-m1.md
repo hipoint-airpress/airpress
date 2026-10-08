@@ -48,8 +48,8 @@ handler/router.go                       # pluginRouter 注册
 
 **Files:**
 - Modify: `go.mod` / `go.sum`
-- Modify: `config/model.go`（`type AirPress` 结构体，约 :51-63）
-- Modify: `config/config.go`（`normalizeDir(...ThemeDir...)` 之后，约 :74）
+- Modify: `config/model.go`（`type AirPress` 结构体，约 :51-61）
+- Modify: `config/config.go`（`normalizeDir(...ThemeDir...)` 之后，约 :73）
 
 - [ ] **Step 1: 添加 wazero 依赖**
 
@@ -767,7 +767,7 @@ Expected: 编译失败（`entity.Plugin` 未定义等）。
 
 - [ ] **Step 3: 实体文件**
 
-创建 `model/entity/plugin.go`（手写实体，字段风格对齐 `.gen.go`）：
+创建 `model/entity/plugin.go`（手写实体，非 `.gen.go`——插件仓储用原生 gorm API、不依赖 dal gen 层；字段风格对齐 `.gen.go`）：
 
 ```go
 package entity
@@ -825,7 +825,40 @@ func (*PluginKV) TableName() string {
 
 `dal/dal.go` 的 `dbMigrate()` 中，把
 `&entity.PostCategory{}, &entity.PostTag{}, &entity.Tag{}, &entity.ThemeSetting{}, &entity.User{})`
-结尾改为在其前面追加 `&entity.Plugin{}, &entity.PluginKV{}, `（即列表变为含 20 个实体）。
+结尾改为在其前面追加 `&entity.Plugin{}, &entity.PluginKV{}, `（即列表变为含 19 个实体：现有 17 + Plugin + PluginKV）。
+
+同时把 plugin/plugin_kv 的 DDL 追加到 `scripts/table.sql`（现有是 table.sql + AutoMigrate 双轨）。在文件末尾追加：
+
+```sql
+
+create table if not exists plugin
+(
+    id           int auto_increment primary key,
+    create_time  datetime(6)          not null,
+    update_time  datetime(6)          null,
+    name         varchar(64)          not null,
+    title        varchar(128)         not null,
+    version      varchar(32)          not null,
+    status       varchar(16)          not null default 'inactive',
+    install_path varchar(255)         not null,
+    sha256       varchar(64)          not null,
+    manifest     text                 not null,
+    unique index uk_plugin_name (name)
+) ENGINE = INNODB
+  DEFAULT charset = utf8mb4;
+
+create table if not exists plugin_kv
+(
+    id          int auto_increment primary key,
+    create_time datetime(6)  not null,
+    update_time datetime(6)  null,
+    plugin_id   int          not null,
+    `key`       varchar(255) not null,
+    value       longtext     not null,
+    unique index uk_plugin_kv (plugin_id, `key`)
+) ENGINE = INNODB
+  DEFAULT charset = utf8mb4;
+```
 
 - [ ] **Step 5: 实现 `plugin/store/store.go`**
 
@@ -1455,6 +1488,33 @@ func Clock() []byte {
 	m.ExportFunc("handle", h)
 	return m.Bytes()
 }
+
+// InitFlag 是 InitReactor 的 _initialize 写入标志位（0→1）。置于 RandBuf(240-255) 之后，避免与任何夹具的静态数据冲突。
+const InitFlag = 260
+
+// InitReactor：导出 _initialize（官方 Go wasip1 c-shared reactor 形态），写入 InitFlag=1。
+// 用于验证 instance.instantiate 的"_initialize 存在则调用一次"分支（spec §3.1 / §1 二次修订）。
+func InitReactor() []byte {
+	m := New()
+	addCommon(m)
+	// _initialize：把 InitFlag 置 1（i32.store），证明它被调用过。
+	initFn := m.Func(nil, nil, instrs(I32Const(InitFlag), I32Const(1), []byte{0x36, 0x00, 0x00})) // i32.store 0 0 (align=0 offset=0)
+	m.ExportFunc("_initialize", initFn)
+	h := m.Func([]byte{I32, I32}, []byte{I32}, I32Const(RespHdr))
+	m.ExportFunc("handle", h)
+	return m.Bytes()
+}
+
+// InitFailReactor：_initialize 直接 trap（unreachable），验证 _initialize 失败=启用失败（spec §3.1）。
+func InitFailReactor() []byte {
+	m := New()
+	addCommon(m)
+	initFn := m.Func(nil, nil, []byte{0x00}) // unreachable
+	m.ExportFunc("_initialize", initFn)
+	h := m.Func([]byte{I32, I32}, []byte{I32}, I32Const(RespHdr))
+	m.ExportFunc("handle", h)
+	return m.Bytes()
+}
 ```
 
 - [ ] **Step 3: 写测试 `plugin/runtime/wasmfix/fixtures_test.go`**
@@ -1487,6 +1547,8 @@ func TestFixturesCompile(t *testing.T) {
 	compiles(t, "Malicious", Malicious())
 	compiles(t, "Kvsink", Kvsink())
 	compiles(t, "Clock", Clock())
+	compiles(t, "InitReactor", InitReactor())
+	compiles(t, "InitFailReactor", InitFailReactor())
 }
 
 func TestEchoInstantiatesWithoutHost(t *testing.T) {
@@ -1535,6 +1597,58 @@ func TestFrameBuf(t *testing.T) {
 	want := []byte{2, 0, 0, 0, 'a', 'b'}
 	if string(got) != string(want) {
 		t.Fatalf("frameBuf=%v", got)
+	}
+}
+
+// InitReactor 的 _initialize 被调用后，InitFlag 处应被写为 1。
+func TestInitReactorInitializeCalled(t *testing.T) {
+	ctx := context.Background()
+	rt := wazero.NewRuntime(ctx)
+	defer rt.Close(ctx)
+	cm, err := rt.CompileModule(ctx, InitReactor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod, err := rt.InstantiateModule(ctx, cm, wazero.NewModuleConfig().WithName("ir").WithStartFunctions())
+	if err != nil {
+		t.Fatalf("instantiate: %v", err)
+	}
+	if fn := mod.ExportedFunction("_initialize"); fn == nil {
+		t.Fatal("missing _initialize export")
+	} else {
+		if _, err := fn.Call(ctx); err != nil {
+			t.Fatalf("_initialize call: %v", err)
+		}
+	}
+	flag, ok := mod.Memory().Read(InitFlag, 4)
+	if !ok {
+		t.Fatal("read InitFlag failed")
+	}
+	if flag[0] != 1 {
+		t.Fatalf("InitFlag not set to 1: %v", flag)
+	}
+}
+
+// InitFailReactor 的 _initialize trap → 实例化（带自动调用 _initialize 逻辑）应失败。
+// 这里用底层 InstantiateModule + 手动 Call 模拟 instance.instantiate 的失败语义。
+func TestInitFailReactorTraps(t *testing.T) {
+	ctx := context.Background()
+	rt := wazero.NewRuntime(ctx)
+	defer rt.Close(ctx)
+	cm, err := rt.CompileModule(ctx, InitFailReactor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod, err := rt.InstantiateModule(ctx, cm, wazero.NewModuleConfig().WithName("if").WithStartFunctions())
+	if err != nil {
+		t.Fatalf("instantiate: %v", err)
+	}
+	fn := mod.ExportedFunction("_initialize")
+	if fn == nil {
+		t.Fatal("missing _initialize export")
+	}
+	if _, err := fn.Call(ctx); err == nil {
+		t.Fatal("unreachable _initialize must trap")
 	}
 }
 ```
@@ -2694,6 +2808,22 @@ spec: {entry: main.wasm, permissions: [kv]}
 		t.Fatalf("upgrade must reuse row, got %d", len(rows))
 	}
 }
+
+func TestInstallRejectsSameVersion(t *testing.T) {
+	s := newSvc(t)
+	ctx := context.Background()
+	if _, err := s.Install(ctx, mkPluginZip(t, kvManifest, "main.wasm", wasmfix.Kvsink())); err != nil {
+		t.Fatal(err)
+	}
+	// 同名同版本必须拒绝（spec §2.4：v1 不支持覆盖安装为同版本）
+	if _, err := s.Install(ctx, mkPluginZip(t, kvManifest, "main.wasm", wasmfix.Kvsink())); err == nil {
+		t.Fatal("same-name same-version install must be rejected")
+	}
+	rows, _ := s.repo.ListPlugins(ctx)
+	if len(rows) != 1 {
+		t.Fatalf("rejected install must not create a second row, got %d", len(rows))
+	}
+}
 ```
 
 - [ ] **Step 2: 运行确认失败** → `undefined: Service`。
@@ -2783,6 +2913,9 @@ func (s *Service) Install(ctx context.Context, zipData []byte) (*entity.Plugin, 
 	old, err := s.repo.GetPluginByName(ctx, m.Metadata.Name)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err
+	}
+	if old != nil && old.Version == m.Metadata.Version { // 同版本拒绝覆盖（spec §2.4）
+		return nil, fmt.Errorf("plugin %q version %s already installed (upgrade requires a higher version)", m.Metadata.Name, m.Metadata.Version)
 	}
 	if old != nil && old.Status == StatusActive { // 热升级：先停（spec §2.4）
 		if err := s.Disable(ctx, old.ID); err != nil {
@@ -3023,8 +3156,8 @@ git commit -m "feat(plugin): 生命周期服务（安装/启停/卸载/设置/�
 - Create: `handler/admin/plugin.go`
 - Test: `handler/admin/plugin_test.go`
 - Modify: `handler/admin/init.go`（provide 列表）
-- Modify: `handler/server.go`（Server 字段约 :47、ServerParams 约 :96、NewServer 赋值约 :170——三处都紧跟 `PostHandler` 同名字段之后插入）
-- Modify: `handler/router.go`（optionRouter 块之后，约 :175）
+- Modify: `handler/server.go`（Server 字段约 :52、ServerParams 约 :108、NewServer 赋值约 :171——三处都在 `PostHandler` 同名字段之后插入；用字段名定位而非行号）
+- Modify: `handler/router.go`（optionRouter 块之后，当前分支约 :150）
 
 - [ ] **Step 1: 写失败测试 `handler/admin/plugin_test.go`**
 
@@ -3349,13 +3482,12 @@ func NewServiceForTest(db *gorm.DB, cfg *config.Config) *Service {
 
 `handler/admin/init.go` 的 `injection.Provide(...)` 列表追加 `NewPluginHandler,`。
 
-`handler/server.go` 三处（均紧跟 PostHandler 对应行之后）：
+`handler/server.go` 三处（均在 `PostHandler` 字段之后、`PostCommentHandler` 字段之前——PostHandler 在 Server 结构约 :52、ServerParams 约 :108、NewServer 赋值约 :171；实际行号以当前分支为准，用字段名定位而非行号）：
 - Server 字段：`	PluginHandler             *admin.PluginHandler`
 - ServerParams 字段：`	PluginHandler             *admin.PluginHandler`
 - NewServer 赋值：`		PluginHandler:             param.PluginHandler,`
 
-`handler/router.go` 在 optionRouter 块（`optionRouter := authRouter.Group("/options")`
-所在的 `{...}`）之后插入：
+`handler/router.go` 在 optionRouter 块（`optionRouter := authRouter.Group("/options")`，当前分支约 :144-150）的 `{...}` 之后插入：
 
 ```go
 				{
@@ -3456,3 +3588,12 @@ filter 链、`/api/plugins/*`、page-ticket、static 挂载、http.fetch/post.wr
 - **占位符**：Task 11 Step 1 有两处**声明式占位**（TestableService/pluginDtoOut/newZipWriter），
   已在 Step 4 给出确定修正（NewServiceForTest/*dto.PluginResp/archive/zip），其余步骤无 TBD。
 - **环境风险**：sqlite 驱动=CGO（与主程序一致）；wazero v1.12 已缓存；不依赖 TinyGo/外网。
+- **评审修订（2026-10-08）**：
+  - spec §3.1 已从"全局单例 Runtime"更正为"每插件独立 Runtime"（与 plan instance.go 注释一致——host module 名固定 `airpress`，同 runtime 内唯一）。
+  - spec §4.1 host 函数返回协议从"`{ok:false,error}` JSON"更正为"非零错误码 / 0 ptr"（与 plan host.go 的 rc 码一致）。
+  - spec §2.3 数据表约定已明确：plugin/plugin_kv **手写实体**（非 .gen.go，因仓储用原生 gorm），DDL 追加到 scripts/table.sql（双轨）。
+  - plan Task 10 `Install` 补"同名同版本拒绝"（spec §2.4，原遗漏）+ 对应测试 `TestInstallRejectsSameVersion`。
+  - plan Task 6 补 `InitReactor`/`InitFailReactor` 夹具 + 测试，覆盖 `_initialize` 分支（spec §3.1 / §1 二次修订，原 M1 零覆盖盲区）。
+  - plan Task 4 AutoMigrate 实体数 20→19；补 scripts/table.sql DDL。
+  - plan Task 11 行号引用精确化（server.go PostHandler :52/108/171；router.go optionRouter :150）。
+- **遗留待核实**：spec §1 "官方 Go ≥1.24 wasip1 c-shared reactor + `//go:wasmexport`" 是 SDK 选型核心假设，当前环境网络受限无法在线核实，影响 M4 不影响 M1（M1 夹具不依赖，instance.go 的 `_initialize` 调用是防御性可选）。建议 M4 前附 Go 官方 release note / wiki 链接佐证。

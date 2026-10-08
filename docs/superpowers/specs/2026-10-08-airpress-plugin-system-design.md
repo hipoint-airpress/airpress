@@ -72,7 +72,8 @@ spec:
 
 ### 2.3 数据表
 
-沿用现有约定：建表 SQL 追加到 `scripts/table.sql`，实体按 `.gen.go` 生成。
+沿用现有双轨约定：建表 SQL 追加到 `scripts/table.sql`（MySQL DDL，供生产部署），实体注册进 `dal/dal.go` 的 `AutoMigrate`（供开发/测试）。
+插件 `plugin`/`plugin_kv` 两表**手写实体**（`model/entity/plugin.go`、`pluginkv.go`，非 `.gen.go`），因仓储层用原生 gorm API、不依赖 dal gen 层。
 
 - `plugin`：`id`(自增，**即 filter 链排序键**)、`name`(唯一)、`title`、`version`、
   `status`(`inactive|active`)、`install_path`、`sha256`、`manifest_json`、`installed_at`、`updated_at`
@@ -103,7 +104,7 @@ spec:
 
 ### 3.1 运行时
 
-- 全局单例 `wazero.Runtime`；每插件编译一次并缓存 `CompiledModule`。
+- **每插件一个独立 `wazero.Runtime`**（非全局单例）：host module 名固定 `airpress`，而 wazero 同一 runtime 内 host module 名唯一，多插件必须各自成域；每插件编译一次并缓存 `CompiledModule`。
 - 每插件**一个长驻实例 + 每插件 Mutex**：调用串行化（wasm 本就不能并行，并发上限=1 即语义）。
 - **插件是 reactor 形态**：官方 Go 用 `GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared`（Go ≥1.24，`//go:wasmexport`），产出导出 `_initialize` 而非 `_start`。核心实例化时
   `WithStartFunctions()`（不自动跑任何启动函数），随后若存在导出 `_initialize` 则显式调用一次（失败=启用失败）。
@@ -177,7 +178,7 @@ shutdown 10s）。**已知代价**：`api` 是同步 HTTP——重 IO 插件（�
 | `attachment_create(name, mime, bytes) -> {id, url}` | `attachment.write` | 走现有 storage 抽象（本地/OSS/MinIO 插件无感）；大小限沿用现有上传限制；不要求 multipart |
 | `http_fetch(req) -> resp` | `http.fetch` | 见 §4.2 |
 
-host 函数失败一律返回 `{ok:false, error}` JSON，绝不跨边界 panic/trap；host 函数自身全部短超时。
+host 函数失败一律返回**非零错误码**（写类：`rcBadArg/rcInternal` 等 uint32）或 **0 ptr**（读类：未命中/内部错误对插件都表现为"空"，返回 `0` 而非 frame），绝不跨边界 panic/trap；host 函数自身全部短超时。
 **host 函数是本系统真正的攻击面**：全部入参（key 长度、URL、body 大小、DTO 字段）必须校验，信封解析纳入 fuzz 目标。
 
 ### 4.2 `http_fetch` SSRF 防线（安全核心）
