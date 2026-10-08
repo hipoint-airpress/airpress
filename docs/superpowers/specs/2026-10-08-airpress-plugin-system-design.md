@@ -19,7 +19,7 @@ URL → 图片转存为本站附件 → 生成 post。该用例要求插件能�
 | 权限模型 | manifest 声明权限 → 启用时按权限**动态构造 host module**，越权 import 直接实例化失败（权限即接口，无检查旁路） |
 | filter 时机 | 一期只挂**保存路径**（库内即最终内容，渲染零开销）；渲染期 filter 二期 |
 | 后台 UI | 核心做全机制（API/页面/票据/静态资源）；Vue SPA 是编译产物不在本仓库，其两处小改动列为**外部依赖工作项**，不阻塞 |
-| 插件作者语言 | TinyGo（官方 Go 的 wasip1 不支持自定义导出，硬约束）或 Rust；官方 SDK `airpress-plugin-go` 独立仓库 |
+| 插件作者语言 | **2026-10-08 二次修订（用户确认）**：**官方 Go ≥1.24 已支持 WASI Reactor 常驻插件**——`GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared` 生成 `_initialize`（而非 `_start`）后保持活跃；`//go:wasmexport` 导出函数（参数/返回仅限 wasm 标量：i32/i64/f32/f64/uint32/uintptr，不能直接传 string/struct；导出函数不导方法）；初始化放 `init()` 不放 `main()`（Reactor 不调 main）；`GOOS=js` 不支持。Higress、阿里云 AI Gateway 等已用官方 1.24 编译迁移、不再依赖 TinyGo。Go 1.28 实验性 `-buildmode=plugin`+WIT 绑定是后续演进。**结论：SDK 主目标 = 官方 Go（airpress 本机已是 1.27，直接可用）**；TinyGo 降为备选。M1 测试夹具仍用测试内纯 Go 微型构造器（零编译依赖，见 §9）；核心运行时需兼容 reactor 形态：实例化后若存在 `_initialize` 则调用一次（M1 Task 8 已含） |
 
 ## 2. 插件包格式与生命周期
 
@@ -105,6 +105,9 @@ spec:
 
 - 全局单例 `wazero.Runtime`；每插件编译一次并缓存 `CompiledModule`。
 - 每插件**一个长驻实例 + 每插件 Mutex**：调用串行化（wasm 本就不能并行，并发上限=1 即语义）。
+- **插件是 reactor 形态**：官方 Go 用 `GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared`（Go ≥1.24，`//go:wasmexport`），产出导出 `_initialize` 而非 `_start`。核心实例化时
+  `WithStartFunctions()`（不自动跑任何启动函数），随后若存在导出 `_initialize` 则显式调用一次（失败=启用失败）。
+  TinyGo(`-target=wasm-unknown`)插件无 `_initialize`，同样成立。测试夹具（纯 Go 构造）两者皆无。
 - 实例 trap/panic → 本次调用返回错误，实例**销毁重建**（下次调用前惰性重建），防脏状态。
 - `MemoryLimitPages` 限内存：默认 **2048 页（128MB）**。依据：`http_fetch` 单响应上限 10MB，
   插件侧解析 HTML 还要在 wasm 堆里建 DOM/中间结构，32MB 会贴着上限跑；128MB 对博客负载宽裕。
@@ -255,7 +258,7 @@ v1 仅一个点：`post.content.saved`，插在 `PostService.Create/Update` 校�
 ```
 表单 URL → kv_get("seen:"+sha256(url)) 查重
         → http_fetch(url)                         # 宿主代发，七层防线
-        → wasm 内解析 HTML（golang.org/x/net/html，纯 Go，TinyGo 可用）
+        → wasm 内解析 HTML（golang.org/x/net/html，纯 Go，wasip1 可用）
         → 提取 title / 正文容器 / 图片 URL 候选（og:image、正文 img src）
         → 逐个 http_fetch(图片)（≤max_images，content-type 为 image/*）
         → attachment_create(name, mime, bytes) → {id, url}
@@ -270,7 +273,7 @@ v1 仅一个点：`post.content.saved`，插在 `PostService.Create/Update` 校�
 
 ## 8. SDK 与开发文档
 
-- 独立仓库 `airpress-plugin-go`（TinyGo 侧 SDK）：封装 `alloc/free/handle` 生成、
+- 独立仓库 `airpress-plugin-go`（官方 Go wasip1 reactor SDK，`-buildmode=c-shared`；见 §1 决策表二次修订）：封装 `alloc/free/handle` 生成、
   信封编组、host 函数绑定；作者代码形如：
 
 ```go
@@ -284,9 +287,9 @@ func main() {
 }
 ```
 
-- 本仓库 `docs/plugin-dev-guide.md`：打包格式、manifest 字段表、权限语义、TinyGo 构建
-  命令（`tinygo build -o main.wasm -target=wasi`）、SSRF 约束说明、linkscraper 走读。
-- `examples/linkscraper/`：参考插件源码，独立 `go.mod`（与主模块隔离，TinyGo 构建），产物不入库。
+- 本仓库 `docs/plugin-dev-guide.md`：打包格式、manifest 字段表、权限语义、构建命令
+  （`GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o main.wasm`）、SSRF 约束说明、linkscraper 走读。
+- `examples/linkscraper/`：参考插件源码，独立 `go.mod`（与主模块隔离），产物不入库。
 
 ## 9. 测试策略
 
@@ -297,10 +300,12 @@ func main() {
 - `guard`：IP 段判定表驱动；通配域匹配；重定向策略；httptest 起 302→`127.0.0.1` 的假服务断言拒绝。
 - `host`：权限→host module 构造表；信封 fuzz。
 
-**集成测试（wasm fixture 预编译入库，测试机无需 TinyGo；源码+重建命令随附）**
-- `echo.wasm`：协议往返（alloc/handle/free/abi 握手）。
-- `malicious.wasm`：import 未授权函数 → 实例化失败。
-- `slow.wasm`：handle 不返回 → event 丢弃 / filter 跳过 / api 502。
+**集成测试（wasm fixture 由测试内纯 Go 构造器生成，零外部工具链；**2026-10-08 修订**，替代原"预编译提交"方案）**
+- `echo`：协议往返（alloc/handle/free/abi 握手）。
+- `malicious`：import 未授权函数 → 实例化失败。
+- `kvsink`/`optsink`：真实调用 host 函数（kv_set/kv_get/kv_del/kv_list/option_set/log），断言宿主侧副作用。
+- `zerohandle`：handle 返回 0（显式失败语义）。
+- `hang`：handle 死循环 → 超时关闭与实例重建（event 丢弃 / filter 跳过 / api 502 在 M2/M3 复用）。
 - runtime：trap 后重建、Mutex 串行、MemoryLimitPages 触发。
 
 **端到端**：linkscraper 手工验收清单（httptest 假目标页→导入→文章/附件/防重检查）。
@@ -332,7 +337,7 @@ docs/plugin-dev-guide.md     examples/linkscraper/
 
 ## 11. 已知取舍与不做清单
 
-- 官方 Go wasip1 无自定义导出 → SDK 仅支持 TinyGo/Rust；纯 JS-as-plugin 不支持（如需要，二期评估 QuickJS-as-wasm 套娃，明确不做）。
+- 官方 Go ≥1.24 的 wasip1 reactor（`-buildmode=c-shared`+`//go:wasmexport`，用户确认已生产可用）为 SDK 主目标；限制：导出参数/返回仅 wasm 标量、初始化在 `init()`、`main()` 不被调用。纯 JS-as-plugin 不支持（如需要，二期评估 QuickJS-as-wasm 套娃，明确不做）。
 - 单实例串行：重计算插件不得放到同步路径（filter/api 超时即 fail/skip 的保护在此）。
 - wasm 沙箱强，但 host 函数是攻击面 → 入参校验 + fuzz 是 M1–M3 的完成定义一部分。
 - v1 不做：升级回滚目录、签名校验、依赖关系、多插件实例并行、渲染期 filter、前台路由、
