@@ -3596,4 +3596,4 @@ filter 链、`/api/plugins/*`、page-ticket、static 挂载、http.fetch/post.wr
   - plan Task 6 补 `InitReactor`/`InitFailReactor` 夹具 + 测试，覆盖 `_initialize` 分支（spec §3.1 / §1 二次修订，原 M1 零覆盖盲区）。
   - plan Task 4 AutoMigrate 实体数 20→19；补 scripts/table.sql DDL。
   - plan Task 11 行号引用精确化（server.go PostHandler :52/108/171；router.go optionRouter :150）。
-- **遗留待核实**：spec §1 "官方 Go ≥1.24 wasip1 c-shared reactor + `//go:wasmexport`" 是 SDK 选型核心假设，当前环境网络受限无法在线核实，影响 M4 不影响 M1（M1 夹具不依赖，instance.go 的 `_initialize` 调用是防御性可选）。建议 M4 前附 Go 官方 release note / wiki 链接佐证。
+- **遗留待核实**：~~spec §1 "官方 Go ≥1.24 wasip1 c-shared reactor + `//go:wasmexport`"~~ **已在线核实（2026-10-08）**：Go 1.24 release notes 确认 `go:wasmexport` + wasip1 `-buildmode=c-shared` reactor 均为 Go 1.24 引入（[go.dev/doc/go1.24](https://go.dev/doc/go1.24)）；`-buildmode=c-shared` 在 wasip1 上构建 WASI reactor/library（[go.dev/cmd/go](https://go.dev/cmd/go/)）；类型表见 [go.dev/cmd/compile](https://go.dev/cmd/compile/)（string 可作参数非返回值，pointer 受限——spec §1 已据此修订并附链接）。仅 reactor→`_initialize` 的逐字源码确认因 raw.githubusercontent/go.googlesource 网络不可达未完成，但 WASI Preview 1 规范 + wazero RATIONALE 佐证可靠。该假设影响 M4 SDK 不影响 M1。
