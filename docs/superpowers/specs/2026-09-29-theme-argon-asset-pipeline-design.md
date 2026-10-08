@@ -1,5 +1,10 @@
 # theme-argon 资源管线全面 vite 化
 
+> **路径更新（2026-09-30，阶段 E 之后）**：本文是 2026-09-29 的设计快照，文件位置此后有变化：
+> `src/argontheme.js` → `src/scripts/main.js`、`src/style.scss` → `src/styles/main.scss`（正文已按新位置更新）；
+> 另 `src/vendor/**` 已在阶段 C 删除（第三方库改由 CDN 提供），正文里该路径只作历史记录。
+> 未带 `src/` 前缀的 `style.css`/`argontheme.js` 指当时位于主题根目录的构建产物。
+
 - 日期：2026-09-29
 - 范围：`airpress/resources/template/theme/theme-argon`
 - 目标：用 vite 完整接管 CSS+JS 资源管线，删除手工拼接的 `argon_css_merged.css` / `argon_js_merged.js`，将第三方库与项目自有代码分离、分别产出固定文件名并可压缩。
@@ -10,8 +15,8 @@ theme-argon 是从 WordPress 的 argon 主题移植到 Halo 的主题。当前�
 
 | 资源 | 大小 | 来源 | 由谁构建 | 性质 |
 |------|------|------|----------|------|
-| `style.css`（根目录） | 156KB | `src/style.scss` | sass（`--style=expanded`，**未压缩**） | 项目自有 CSS |
-| `argontheme.js`（根目录） | 87KB | `src/argontheme.js` | vite（`minify:false`，lib 模式，用全局 `$`） | 项目自有 JS 逻辑 |
+| `style.css`（根目录） | 156KB | `src/styles/main.scss` | sass（`--style=expanded`，**未压缩**） | 项目自有 CSS |
+| `argontheme.js`（根目录） | 87KB | `src/scripts/main.js` | vite（`minify:false`，lib 模式，用全局 `$`） | 项目自有 JS 逻辑 |
 | `assets/js/argon.min.js` | 3.2KB | 手写静态 | 无 | 项目头部小脚本 |
 | `assets/argon_css_merged.css` | 358KB | **手工拼接** | 无 | 第三方 CSS（bootstrap、font-awesome…） |
 | `assets/argon_js_merged.js` | 584KB | **手工拼接** | 无 | 第三方 JS（jquery、bootstrap、fancybox、highlight…共 20+ 库） |
@@ -36,8 +41,8 @@ Halo 模板以 `theme_base/assets/...?version={{ theme.Version }}` 的固定相�
 |------|------|------|
 | `assets/vendor.js` | 第三方库，全局暴露 `$`/`jQuery`/`Headroom`/`iziToast`/`tippy`/`noUiSlider`/`hljs` 等 | `assets/argon_js_merged.js` |
 | `assets/vendor.css` | 第三方 CSS（bootstrap、font-awesome 等） | `assets/argon_css_merged.css`（部分） |
-| `assets/app.js` | 项目自有 JS（`src/argontheme.js` + `assets/js/argon.min.js`） | 根目录 `argontheme.js` |
-| `assets/app.css` | 项目自有 CSS（`src/style.scss`，**压缩**） | 根目录 `style.css` |
+| `assets/app.js` | 项目自有 JS（`src/scripts/main.js` + `assets/js/argon.min.js`） | 根目录 `argontheme.js` |
+| `assets/app.css` | 项目自有 CSS（`src/styles/main.scss`，**压缩**） | 根目录 `style.css` |
 
 配置要点：
 
@@ -87,8 +92,8 @@ Halo 模板以 `theme_base/assets/...?version={{ theme.Version }}` 的固定相�
 | clamp-js | 本地/npm | 进 vendor（已确认 clamp 调用） |
 | hljs + line-numbers | 本地 | JS 进 vendor；**样式剥离**（动态主题保留静态目录） |
 | headindex | 本地 | 进 vendor（已确认调用） |
-| clipboard.js | 本地 | 进 vendor（已确认 `new ClipboardJS(...)`，`src/argontheme.js:2693`） |
-| pickr | 本地 | 进 vendor（已确认 `new Pickr(...)`，`src/argontheme.js:2483`） |
+| clipboard.js | 本地 | 进 vendor（已确认 `new ClipboardJS(...)`，`src/scripts/main.js:2693`） |
+| pickr | 本地 | 进 vendor（已确认 `new Pickr(...)`，`src/scripts/main.js:2483`） |
 | jquery.easing | 本地 | 进 vendor（已确认 `.animate(..., 'easeOutExpo'/'easeOutCirc')`，jQuery 核心无此命名缓动） |
 | **sharejs** | 本地 | **删除**（全库零调用：`grep` 命中 0） |
 | Argon DS JS（`assets/js/argon.min.js`） | 独立文件 | 进 vendor（Argon Design System，Creative Tim；依赖 `$`/`Headroom`/`noUiSlider`） |
@@ -98,17 +103,17 @@ Halo 模板以 `theme_base/assets/...?version={{ theme.Version }}` 的固定相�
 
 ## 5. 构建机制（关键约束：经典脚本不能走 ESM 打包）
 
-**约束：** jQuery/Bootstrap/popper 等是 UMD 全局脚本；`src/argontheme.js` 顶部用 `var argonConfig`（依赖全局作用域），且大量使用全局 `$`/`jQuery`。若交给 Vite 以 ESM 打包：UMD 库会走 CommonJS 分支、不再挂到 `window`；argontheme 的 `var argonConfig` 会变成模块作用域、与 `head.tmpl` 注入的全局 `window.argonConfig` 脱节，导致主题配置全部失效。因此**经典脚本必须「拼接顺序 + 压缩」，不能 ESM bundle**。
+**约束：** jQuery/Bootstrap/popper 等是 UMD 全局脚本；`src/scripts/main.js` 顶部用 `var argonConfig`（依赖全局作用域），且大量使用全局 `$`/`jQuery`。若交给 Vite 以 ESM 打包：UMD 库会走 CommonJS 分支、不再挂到 `window`；argontheme 的 `var argonConfig` 会变成模块作用域、与 `head.tmpl` 注入的全局 `window.argonConfig` 脱节，导致主题配置全部失效。因此**经典脚本必须「拼接顺序 + 压缩」，不能 ESM bundle**。
 
 机制（已确认）：
 
 - **经典脚本（vendor.js / app.js）**：由 `scripts/build-vendor.mjs` 读取 `src/vendor/` 下按固定顺序拆出的源文件，**顺序拼接**后用 esbuild 压缩（`transform(code, { minify: true, loader: 'js' }`）输出固定名文件。esbuild 是 Vite 的内置引擎，此处直接用于保留全局作用域语义。顺序沿用 merged 原顺序（jquery → popper → bootstrap → …，去重，剔除 sharejs），Argon DS 的 `argon.min.js` 置于末尾。
 - **第三方 CSS（vendor.css）**：同源由 `build-vendor.mjs` 拼接 5 个 CSS 片段（argon.min.css → font-awesome → iziToast → pickr → fancybox）后 esbuild 压缩，输出 `assets/vendor.css`。字体 `url('vendor/font-awesome/fonts/...')` 在 merged 中**已是相对 `assets/` 的路径**，落到 `assets/vendor.css` 后无需改写，字体目录 `assets/vendor/font-awesome/fonts/` 仍作静态资源保留。
-- **主题自有 CSS（app.css）**：由 Vite 经 sass 编译 `src/style.scss` 并压缩（体现「Vite 管理主题 scss」），输出固定名 `assets/app.css`。
+- **主题自有 CSS（app.css）**：由 Vite 经 sass 编译 `src/styles/main.scss` 并压缩（体现「Vite 管理主题 scss」），输出固定名 `assets/app.css`。
 
 `vite.config.js` 改造：
 
-- `build.lib` 入口服从 `src/entries/style.js`（`import '../style.scss'`），`formats: ['iife']`、`fileName: 'app'`、`outDir: 'assets'`、`emptyOutDir: false`、启用 CSS 压缩 → 产出 `assets/app.js`（空壳，将被 `build-vendor.mjs` 覆盖）+ `assets/app.css`。
+- `build.lib` 入口服从 `src/entries/style.js`（`import '../styles/main.scss'`），`formats: ['iife']`、`fileName: 'app'`、`outDir: 'assets'`、`emptyOutDir: false`、启用 CSS 压缩 → 产出 `assets/app.js`（空壳，将被 `build-vendor.mjs` 覆盖）+ `assets/app.css`。
 - `build.rollupOptions.output.assetFileNames: '[name][extname]'` 强制固定名、无 hash。
 - 删除原 `lib`/`copy-to-root` 逻辑（产物直接落在 `assets/`）。
 - `package.json` 脚本改为 `"build": "vite build && node scripts/build-vendor.mjs"`、`"watch": "vite build --watch"`，移除 `build:js`/`build:css` 拆分（sass 由 Vite 接管）。

@@ -1,10 +1,17 @@
 # theme-argon 资源管线 vite 化 实现计划
 
+> **路径更新（2026-09-30，阶段 E 之后）**：本文是阶段 A/B 的计划快照，其中的文件位置此后有变化，读正文时按此对照：
+> - `src/argontheme.js` → `src/scripts/main.js`、`src/style.scss` → `src/styles/main.scss`（正文已按新位置更新）；
+> - `src/css/` → `src/styles/vendor/`（正文中形如 `src/css/...` 的写法保留为当时的位置）；
+> - `src/vendor/**`、`scripts/split-merged.mjs`、`scripts/build-vendor.mjs` 已在阶段 C 删除（第三方库改由 CDN 提供），
+>   正文里这些路径只作历史记录；
+> - 未带 `src/` 前缀的 `style.css`/`argontheme.js` 指当时位于主题根目录的构建产物。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 删除手工拼接的 `assets/argon_css_merged.css` / `assets/argon_js_merged.js`，改为从 merged 按标记拆分出第三方源、由「拼接+压缩」管线产出固定名的 `vendor.js`/`vendor.css`，主题自有的 `style.scss`/`argontheme.js` 由 Vite/esbuild 产出 `app.css`/`app.js`，并压缩 CSS。
 
-**Architecture:** 经典脚本（jQuery/Bootstrap 等 UMD 全局库 + 依赖全局 `argonConfig` 的 `argontheme.js`）**不能走 ESM 打包**，否则全局作用域被破坏；因此用「顺序拼接 + esbuild 压缩」保留原语义。主题自有的 `src/style.scss` 走 Vite 的 sass 管线并压缩。产物全部落在 `assets/`，采用固定文件名（无 hash）以适配 Halo 模板的 `theme_base/assets/...?version=` 引用。
+**Architecture:** 经典脚本（jQuery/Bootstrap 等 UMD 全局库 + 依赖全局 `argonConfig` 的 `argontheme.js`）**不能走 ESM 打包**，否则全局作用域被破坏；因此用「顺序拼接 + esbuild 压缩」保留原语义。主题自有的 `src/styles/main.scss` 走 Vite 的 sass 管线并压缩。产物全部落在 `assets/`，采用固定文件名（无 hash）以适配 Halo 模板的 `theme_base/assets/...?version=` 引用。
 
 **Tech Stack:** Vite 8（+ sass 插件）、esbuild（Vite 内置引擎）、Node ESM 脚本、Halo 主题模板（`{{ }}`/`{% %}`/`{# #}`）。
 
@@ -20,7 +27,7 @@
 |------|------|------|
 | 新建 | `scripts/split-merged.mjs` | 一次性：按标记把 merged 拆成 `src/vendor/**` 独立源文件 |
 | 新建 | `scripts/build-vendor.mjs` | 构建期：拼接+压缩 → `assets/vendor.js`/`vendor.css`/`app.js` |
-| 新建 | `src/entries/style.js` | Vite 入口，仅 `import '../style.scss'` → `assets/app.css` |
+| 新建 | `src/entries/style.js` | Vite 入口，仅 `import '../styles/main.scss'` → `assets/app.css` |
 | 新建 | `src/vendor/**`（拆分产物） | 第三方库独立源文件 |
 | 新建 | `src/vendor/argon-ds/argon.min.js` | 由 `assets/js/argon.min.js` 迁移而来（Argon DS） |
 | 修改 | `vite.config.js` | 改为 lib 入口 `src/entries/style.js`，输出固定名到 `assets/` |
@@ -118,21 +125,21 @@ git commit -m "refactor: split merged vendor assets into src/vendor sources"
 
 Run:
 ```bash
-grep -q "new ClipboardJS" src/argontheme.js && echo "clipboard OK"
-grep -q "new Pickr" src/argontheme.js && echo "pickr OK"
-grep -qE "easeOutExpo|easeOutCirc" src/argontheme.js && echo "jquery.easing OK"
-grep -q "noUiSlider" src/argontheme.js && echo "nouislider OK"
-grep -q "iziToast" src/argontheme.js && echo "izitoast OK"
-grep -q "\$.pjax" src/argontheme.js && echo "pjax OK"
-grep -q "Headroom" src/argontheme.js && echo "headroom OK"
-grep -q "pangu" src/argontheme.js && echo "pangu OK"
-grep -q "tippy(" src/argontheme.js && echo "tippy OK"
+grep -q "new ClipboardJS" src/scripts/main.js && echo "clipboard OK"
+grep -q "new Pickr" src/scripts/main.js && echo "pickr OK"
+grep -qE "easeOutExpo|easeOutCirc" src/scripts/main.js && echo "jquery.easing OK"
+grep -q "noUiSlider" src/scripts/main.js && echo "nouislider OK"
+grep -q "iziToast" src/scripts/main.js && echo "izitoast OK"
+grep -q "\$.pjax" src/scripts/main.js && echo "pjax OK"
+grep -q "Headroom" src/scripts/main.js && echo "headroom OK"
+grep -q "pangu" src/scripts/main.js && echo "pangu OK"
+grep -q "tippy(" src/scripts/main.js && echo "tippy OK"
 ```
 Expected: 9 行 `... OK` 全部输出。
 
 - [ ] **Step 2: 复核「删除」的 sharejs 确为零调用**
 
-Run: `grep -rn "ShareJS\|sharejs" src/argontheme.js module/ layouts/ *.tmpl | wc -l`
+Run: `grep -rn "ShareJS\|sharejs" src/scripts/main.js module/ layouts/ *.tmpl | wc -l`
 Expected: `0`
 
 - [ ] **Step 3: 确认拆分源中不含 sharejs**
@@ -160,8 +167,8 @@ Expected: 文件存在于 `src/vendor/argon-ds/argon.min.js`（约 3241 字节�
 
 - [ ] **Step 2: 检查旧 `src/vendor/headindex.js` 是否被引用**
 
-Run: `grep -rn "vendor/headindex\|headindex" src/argontheme.js | head`
-Expected: 无引用（`src/argontheme.js` 无 import）。若确无引用则执行 Step 3；若有引用，改为保留该文件并在 Task 4 的列表中加入它、同时从拆分列表移除 `headindex/headindex.js`。
+Run: `grep -rn "vendor/headindex\|headindex" src/scripts/main.js | head`
+Expected: 无引用（`src/scripts/main.js` 无 import）。若确无引用则执行 Step 3；若有引用，改为保留该文件并在 Task 4 的列表中加入它、同时从拆分列表移除 `headindex/headindex.js`。
 
 - [ ] **Step 3: 删除冗余的 headindex 副本**
 
@@ -246,7 +253,7 @@ const minifyCss = async (code) =>
 
 writeFileSync(at('assets/vendor.js'), await minifyJs(concatJs(VENDOR_JS)));
 writeFileSync(at('assets/vendor.css'), await minifyCss(concatJs(VENDOR_CSS)));
-writeFileSync(at('assets/app.js'), await minifyJs(read('src/argontheme.js')));
+writeFileSync(at('assets/app.js'), await minifyJs(read('src/scripts/main.js')));
 
 console.log('已产出 assets/vendor.js, assets/vendor.css, assets/app.js');
 ```
@@ -297,7 +304,7 @@ git commit -m "build: add concat+minify vendor build script"
 
 ```js
 // Vite 入口：仅编译主题自有样式（style.scss → assets/app.css，压缩）。
-import '../style.scss';
+import '../styles/main.scss';
 ```
 
 - [ ] **Step 2: 重写 vite.config.js**
@@ -307,7 +314,7 @@ import '../style.scss';
 ```js
 import { defineConfig } from 'vite';
 
-// Vite 负责主题自有样式：src/style.scss → assets/app.css（sass 编译 + 压缩）。
+// Vite 负责主题自有样式：src/styles/main.scss → assets/app.css（sass 编译 + 压缩）。
 // 经典脚本（vendor.js/app.js）由 scripts/build-vendor.mjs 用 esbuild 拼接+压缩产出，
 // 因为 UMD 全局库与依赖全局 argonConfig 的 argontheme.js 不能被 ESM 打包。
 export default defineConfig({
