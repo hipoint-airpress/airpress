@@ -14,6 +14,12 @@ type linkExtension struct {
 	Template    *template.Template
 }
 
+// linkTeam 按分组聚合的友情链接，供主题模板以 team.Team / team.Links 直接遍历。
+type linkTeam struct {
+	Team  string
+	Links []*dto.Link
+}
+
 func RegisterLinkFunc(template *template.Template, linkService service.LinkService) {
 	l := &linkExtension{
 		LinkService: linkService,
@@ -52,19 +58,33 @@ func (l *linkExtension) addListLinksRandom() {
 	l.Template.AddFunc("listLinksRandom", listLinksRandom)
 }
 
+// addListLinksGroupByTeam 注册 listLinksGroupByTeam：按 Team 分组并保持稳定顺序。
+//
+// 出参为切片而非 map（map 遍历顺序随机），模板可写成
+//
+//	{% for team in listLinksGroupByTeam() %}{{ team.Team }}{% for link in team.Links %}...
 func (l *linkExtension) addListLinksGroupByTeam() {
-	listLinksGroupByTeam := func() (map[string][]*dto.Link, error) {
+	listLinksGroupByTeam := func() ([]linkTeam, error) {
 		ctx := context.Background()
 		links, err := l.LinkService.List(ctx, nil)
 		if err != nil {
 			return nil, err
 		}
 		linkDTOs := l.LinkService.ConvertToDTOs(ctx, links)
-		teamLinkMap := make(map[string][]*dto.Link)
+
+		// 保持数据库返回的先后顺序：分组按首次出现的次序，组内保持原次序
+		index := make(map[string]int)
+		teams := make([]linkTeam, 0)
 		for _, link := range linkDTOs {
-			teamLinkMap[link.Team] = append(teamLinkMap[link.Team], link)
+			i, ok := index[link.Team]
+			if !ok {
+				i = len(teams)
+				index[link.Team] = i
+				teams = append(teams, linkTeam{Team: link.Team})
+			}
+			teams[i].Links = append(teams[i].Links, link)
 		}
-		return teamLinkMap, nil
+		return teams, nil
 	}
 	l.Template.AddFunc("listLinksGroupByTeam", listLinksGroupByTeam)
 }
