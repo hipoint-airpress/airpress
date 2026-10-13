@@ -239,9 +239,29 @@ func (a *attachmentServiceImpl) GetAllMediaTypes(ctx context.Context) ([]string,
 	return allMediaTypes, WrapDBErr(err)
 }
 
+// GetAllTypes 返回可作为「存储位置」筛选项的附件类型：系统设置中当前配置的存储位置，
+// 加上附件库中已经存在过的类型。前者保证刚配置完、还没有任何附件上传时也能被筛到。
 func (a *attachmentServiceImpl) GetAllTypes(ctx context.Context) ([]consts.AttachmentType, error) {
 	attachmentDAL := dal.GetQueryByCtx(ctx).Attachment
-	var allTypes []consts.AttachmentType
-	err := attachmentDAL.WithContext(ctx).Distinct(attachmentDAL.Type).Select(attachmentDAL.Type).Scan(&allTypes)
-	return allTypes, err
+	var existedTypes []consts.AttachmentType
+	err := attachmentDAL.WithContext(ctx).Distinct(attachmentDAL.Type).Select(attachmentDAL.Type).Scan(&existedTypes)
+	if err != nil {
+		return nil, WrapDBErr(err)
+	}
+
+	allTypes := make([]consts.AttachmentType, 0, len(existedTypes)+1)
+	seen := make(map[consts.AttachmentType]struct{}, len(existedTypes)+1)
+	add := func(attachmentType consts.AttachmentType) {
+		if _, ok := seen[attachmentType]; ok {
+			return
+		}
+		seen[attachmentType] = struct{}{}
+		allTypes = append(allTypes, attachmentType)
+	}
+
+	add(a.OptionService.GetAttachmentType(ctx))
+	for _, attachmentType := range existedTypes {
+		add(attachmentType)
+	}
+	return allTypes, nil
 }

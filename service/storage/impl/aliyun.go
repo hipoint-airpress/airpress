@@ -33,7 +33,7 @@ type aliyunClient struct {
 	EndPoint       string
 	Source         string
 	Style          string
-	ThubmnailStyle string
+	ThumbnailStyle string
 	Domain         string
 	Protocol       string
 }
@@ -81,8 +81,8 @@ func (a *Aliyun) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (
 		return nil, xerr.WithStatus(err, xerr.StatusInternalServerError)
 	}
 	err = handleImageMeta(file, result, func(_ image.Image) (string, error) {
-		if aliyunClientInstance.ThubmnailStyle != "" {
-			return fd.getRelativePath() + aliyunClientInstance.ThubmnailStyle, nil
+		if aliyunClientInstance.ThumbnailStyle != "" {
+			return fd.getRelativePath() + aliyunClientInstance.ThumbnailStyle, nil
 		} else {
 			return fd.getRelativePath(), nil
 		}
@@ -162,7 +162,7 @@ func (a *Aliyun) getAliOSSClient(ctx context.Context) (*aliyunClient, error) {
 	aliyunClientInstance.Source = source
 	aliyunClientInstance.BucketName = bucketName
 	aliyunClientInstance.EndPoint = endPoint
-	aliyunClientInstance.ThubmnailStyle = thumbnailStyleRule
+	aliyunClientInstance.ThumbnailStyle = thumbnailStyleRule
 	aliyunClientInstance.Style = styleRule
 	aliyunClientInstance.Domain = domain
 	aliyunClientInstance.Protocol = protocol

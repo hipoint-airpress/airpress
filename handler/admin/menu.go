@@ -1,9 +1,12 @@
 package admin
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
 
 	"github.com/hipoint-airpress/airpress/handler/trans"
@@ -12,6 +15,37 @@ import (
 	"github.com/hipoint-airpress/airpress/util"
 	"github.com/hipoint-airpress/airpress/util/xerr"
 )
+
+// parseMenuBatchParams 手动解析批量菜单并逐条校验。
+// 背景:菜单页"调整顺序保存"走 PUT /menus/batch,会重传组内每条菜单的全部字段;
+// 而 gin 对 slice 的内建校验失败时返回 binding.SliceValidationError,
+// 其中不携带原始下标,handler 的 errors.As(validator.ValidationErrors) 无法命中,
+// 只能笼统回 "parameter error",用户无从得知是哪条菜单、哪个字段不合规。
+// 这里改为自行解码后逐条跑同一份 validator,把下标/id/名称带进错误信息。
+func parseMenuBatchParams(ctx *gin.Context) ([]*param.Menu, error) {
+	menuParams := make([]*param.Menu, 0)
+	if err := json.NewDecoder(ctx.Request.Body).Decode(&menuParams); err != nil {
+		return nil, xerr.WithStatus(err, xerr.StatusBadRequest).WithMsg("parameter error")
+	}
+	for i, menuParam := range menuParams {
+		if menuParam == nil {
+			return nil, xerr.WithStatus(nil, xerr.StatusBadRequest).
+				WithMsg(fmt.Sprintf("第 %d 条菜单为 null", i+1))
+		}
+		err := binding.Validator.ValidateStruct(menuParam)
+		if err == nil {
+			continue
+		}
+		var errs validator.ValidationErrors
+		if errors.As(err, &errs) {
+			return nil, xerr.WithStatus(err, xerr.StatusBadRequest).
+				WithMsg(fmt.Sprintf("第 %d 条菜单(id=%d,名称=%q):%s",
+					i+1, menuParam.ID, menuParam.Name, trans.Translate(errs)))
+		}
+		return nil, xerr.WithStatus(err, xerr.StatusBadRequest).WithMsg("parameter error")
+	}
+	return menuParams, nil
+}
 
 type MenuHandler struct {
 	MenuService service.MenuService
@@ -185,14 +219,9 @@ func (m *MenuHandler) CreateMenu(ctx *gin.Context) (interface{}, error) {
 // @Failure      500  {object}  dto.BaseDTO
 // @Router       /admin/menus/batch [post]
 func (m *MenuHandler) CreateMenuBatch(ctx *gin.Context) (interface{}, error) {
-	menuParams := make([]*param.Menu, 0)
-	err := ctx.ShouldBindJSON(&menuParams)
+	menuParams, err := parseMenuBatchParams(ctx)
 	if err != nil {
-		e := validator.ValidationErrors{}
-		if errors.As(err, &e) {
-			return nil, xerr.WithStatus(e, xerr.StatusBadRequest).WithMsg(trans.Translate(e))
-		}
-		return nil, xerr.WithStatus(err, xerr.StatusBadRequest).WithMsg("parameter error")
+		return nil, err
 	}
 	menus, err := m.MenuService.CreateBatch(ctx, menuParams)
 	if err != nil {
@@ -248,14 +277,9 @@ func (m *MenuHandler) UpdateMenu(ctx *gin.Context) (interface{}, error) {
 // @Failure      500  {object}  dto.BaseDTO
 // @Router       /admin/menus/batch [put]
 func (m *MenuHandler) UpdateMenuBatch(ctx *gin.Context) (interface{}, error) {
-	menuParams := make([]*param.Menu, 0)
-	err := ctx.ShouldBindJSON(&menuParams)
+	menuParams, err := parseMenuBatchParams(ctx)
 	if err != nil {
-		e := validator.ValidationErrors{}
-		if errors.As(err, &e) {
-			return nil, xerr.WithStatus(e, xerr.StatusBadRequest).WithMsg(trans.Translate(e))
-		}
-		return nil, xerr.WithStatus(err, xerr.StatusBadRequest).WithMsg("parameter error")
+		return nil, err
 	}
 	menus, err := m.MenuService.UpdateBatch(ctx, menuParams)
 	if err != nil {
