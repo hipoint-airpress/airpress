@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/disintegration/imaging"
@@ -21,7 +20,6 @@ import (
 	"github.com/hipoint-airpress/airpress/log"
 	"github.com/hipoint-airpress/airpress/model/dto"
 	"github.com/hipoint-airpress/airpress/service"
-	"github.com/hipoint-airpress/airpress/util"
 	"github.com/hipoint-airpress/airpress/util/xerr"
 )
 
@@ -45,12 +43,19 @@ func NewLocalFileStorage(config *config.Config, optionService service.OptionServ
 
 func (l *LocalFileStorage) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (*dto.AttachmentDTO, error) {
 	now := time.Now()
-	year, month, _ := now.Date()
+	name, err := storageName()
+	if err != nil {
+		return nil, xerr.WithMsg(err, "generate storage name error")
+	}
+	// 主图与缩略图必须共用同一个随机名，故用返回固定值的策略而非 storageName 本身
+	fixedName := func() (string, error) { return name, nil }
+	subPath := l.getUploadPath(now, fileHeader.Filename)
 
 	fd, err := newLocalFileDescriptor(
 		withOriginalName(fileHeader.Filename),
 		withBasePath(l.Config.AirPress.WorkDir),
-		withSubPath(l.getUploadPath(year, int(month))),
+		withSubPath(subPath),
+		withRename(fixedName),
 		withShouldRename(commonRenamePredicateFunc(ctx, consts.AttachmentTypeLocal)),
 	)
 	if err != nil {
@@ -92,7 +97,7 @@ func (l *LocalFileStorage) Upload(ctx context.Context, fileHeader *multipart.Fil
 
 	mediaType, _ := getFileContentType(srcFile)
 	attachment := dto.AttachmentDTO{
-		Name:           fd.getFileName(),
+		Name:           uploadBaseName(fileHeader.Filename),
 		Path:           fd.getRelativePath(),
 		FileKey:        fd.getRelativePath(),
 		Suffix:         fd.getExtensionName(),
@@ -108,7 +113,8 @@ func (l *LocalFileStorage) Upload(ctx context.Context, fileHeader *multipart.Fil
 		thumbnailFd, err := newLocalFileDescriptor(
 			withOriginalName(fileHeader.Filename),
 			withBasePath(l.Config.AirPress.WorkDir),
-			withSubPath(l.getUploadPath(year, int(month))),
+			withSubPath(subPath),
+			withRename(fixedName),
 			withShouldRename(func(r string) (bool, error) {
 				return false, nil
 			}),
@@ -181,11 +187,10 @@ func (l *LocalFileStorage) GetFilePath(ctx context.Context, relativePath string)
 	return fullPath, nil
 }
 
-func (l *LocalFileStorage) getUploadPath(year, month int) string {
-	uploadPath := filepath.Join(
+// getUploadPath 返回 upload/{类型}/{年}/{月} 形式的本地存储目录
+func (l *LocalFileStorage) getUploadPath(t time.Time, filename string) string {
+	return filepath.Clean(filepath.Join(
 		consts.AirPressUploadDir,
-		strconv.Itoa(year),
-		util.IfElse(month >= 10, strconv.Itoa(month), "0"+strconv.Itoa(month)).(string),
-	)
-	return filepath.Clean(uploadPath)
+		filepath.FromSlash(storageSubPath(t, filename)),
+	))
 }
