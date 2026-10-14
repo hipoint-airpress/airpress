@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/url"
+	"time"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 
@@ -50,9 +51,10 @@ func (a *Aliyun) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (
 	}
 	fd, err := newURLFileDescriptor(
 		withBaseURL(basePath),
-		withSubURLPath(aliyunClientInstance.Source),
+		withSubURLPath(cloudSubPath(aliyunClientInstance.Source, time.Now(), fileHeader.Filename)),
 		withShouldRenameURLOption(commonRenamePredicateFunc(ctx, consts.AttachmentTypeAliOSS)),
 		withOriginalNameURLOption(fileHeader.Filename),
+		withRenameURLOption(storageName),
 	)
 	if err != nil {
 		return nil, xerr.WithStatus(err, xerr.StatusInternalServerError)
@@ -62,13 +64,18 @@ func (a *Aliyun) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (
 		return nil, xerr.WithStatus(err, xerr.StatusInternalServerError).WithMsg("open upload file error")
 	}
 	defer func() { _ = file.Close() }()
-	err = aliyunClientInstance.Bucket.PutObject(fd.getRelativePath(), file)
+	// 原始文件名写进对象元数据，此后直链访问由 OSS 直接返回该头，无需查库
+	err = aliyunClientInstance.Bucket.PutObject(
+		fd.getRelativePath(),
+		file,
+		oss.ContentDisposition(contentDisposition(fileHeader.Filename)),
+	)
 	if err != nil {
 		return nil, xerr.WithMsg(err, "upload to aliyun oss error: "+err.Error()).WithStatus(xerr.StatusInternalServerError)
 	}
 	mediaType, _ := getFileContentType(file)
 	result := &dto.AttachmentDTO{
-		Name:           fd.getFileName(),
+		Name:           uploadBaseName(fileHeader.Filename),
 		Path:           fd.getRelativePath() + aliyunClientInstance.Style,
 		FileKey:        fd.getRelativePath(),
 		Suffix:         fd.getExtensionName(),
