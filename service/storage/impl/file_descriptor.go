@@ -21,6 +21,7 @@ type shouldRename = func(relativePath string) (bool, error)
 
 // renameFunc 是改名策略：返回要使用的文件名主体（不含扩展名）。
 // 通过 withRename/withRenameURLOption 指定；不指定时沿用原始文件名基名。
+// 策略必须返回非空基名：返回空串会拼出 ".jpg" 这类隐藏文件式路径。
 type renameFunc = func() (string, error)
 
 type localFileDescriptor struct {
