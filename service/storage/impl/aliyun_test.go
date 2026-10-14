@@ -43,3 +43,24 @@ func TestAliyunGetFilePathKeepsProcessQuery(t *testing.T) {
 		t.Errorf("GetFilePath()\n got = %q\nwant = %q", got, want)
 	}
 }
+
+func TestOSSProcessQuery(t *testing.T) {
+	cases := []struct {
+		name string
+		rule string
+		want string
+	}{
+		{"含斜杠视为完整处理表达式", "image/resize,w_256", "?x-oss-process=image/resize,w_256"},
+		{"不含斜杠视为控制台样式名", "thumb", "?x-oss-process=style/thumb"},
+		{"空值不加任何后缀", "", ""},
+		{"纯空格等同空值", "   ", ""},
+		{"前后空格被修剪", " image/sharpen,50 ", "?x-oss-process=image/sharpen,50"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := ossProcessQuery(c.rule); got != c.want {
+				t.Errorf("ossProcessQuery(%q) = %q, want %q", c.rule, got, c.want)
+			}
+		})
+	}
+}
