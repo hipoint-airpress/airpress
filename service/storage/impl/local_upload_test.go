@@ -19,6 +19,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/hipoint-airpress/airpress/config"
+	"github.com/hipoint-airpress/airpress/consts"
 	"github.com/hipoint-airpress/airpress/dal"
 	"github.com/hipoint-airpress/airpress/model/dto"
 	"github.com/hipoint-airpress/airpress/model/entity"
@@ -57,7 +58,9 @@ func setupLocalUpload(t *testing.T) (*LocalFileStorage, string) {
 		t.Fatalf("auto migrate attachment: %v", err)
 	}
 
-	// Upload 内 GetQueryByCtx(ctx) 在 ctx 无事务时回落到包级全局 Q，先存旧值、测试结束恢复
+	// Upload 内 GetQueryByCtx(ctx) 在 ctx 无事务时回落到包级全局 Q，先存旧值、测试结束恢复。
+	// 注意：*dal.Q = prev 这种恢复方式依赖 SetDefault 的实现形态是原地改写 *Q（dal/gen.go:38）；
+	// 若将来 codegen 改成替换 dal.Q 指针本身，这里的恢复会静默失效，需要同步改为保存/恢复指针。
 	prev := *dal.Q
 	t.Cleanup(func() {
 		*dal.Q = prev
@@ -149,9 +152,12 @@ func TestLocalUploadChinesePngSavesAndPersists(t *testing.T) {
 	if att.Name != "微信截图" {
 		t.Errorf("Name = %q, want 原始基名 %q", att.Name, "微信截图")
 	}
-	if !uploadPathPattern.MatchString(att.Path) {
+	// att.Path 由 filepath.Join 产出，Windows 下是反斜杠，断言前先斜杠化
+	if !uploadPathPattern.MatchString(filepath.ToSlash(att.Path)) {
 		t.Errorf("Path = %q, 不符合落盘契约 %q", att.Path, uploadPathPattern.String())
 	}
+	// 说明：该断言与 local.go 中 FileKey 的取值是同一表达式，只能防未来二者分叉，
+	// 不能证明 key 生成逻辑本身正确
 	if att.FileKey != att.Path {
 		t.Errorf("FileKey = %q, want 与 Path 相同 %q", att.FileKey, att.Path)
 	}
@@ -180,20 +186,43 @@ func TestLocalUploadChinesePngSavesAndPersists(t *testing.T) {
 		}
 	}
 
-	// 真实数据库写入后读回比对
+	// 真实数据库写入后读回比对：逐列覆盖 saveAttachment 复刻的服务层映射，
+	// Width/Height 互换、漏写 Suffix/Size/Type/MediaType、Path/ThumbPath 斜杠规范化写反都必须在这里变红
 	saveAttachment(t, ctx, att)
+	wantPath := filepath.ToSlash(att.Path)
+	wantThumbPath := filepath.ToSlash(att.ThumbPath)
 	rec, err := dal.Q.Attachment.WithContext(ctx).
-		Where(dal.Q.Attachment.Path.Eq(att.Path)).First()
+		Where(dal.Q.Attachment.Path.Eq(wantPath)).First()
 	if err != nil {
 		t.Fatalf("读回附件失败: %v", err)
 	}
-	if rec.Name != att.Name || rec.Path != att.Path || rec.FileKey != att.FileKey {
+	if rec.Name != att.Name || rec.Path != wantPath || rec.FileKey != att.FileKey {
 		t.Errorf("库内行与 DTO 不一致: name=%q path=%q file_key=%q, want name=%q path=%q file_key=%q",
-			rec.Name, rec.Path, rec.FileKey, att.Name, att.Path, att.FileKey)
+			rec.Name, rec.Path, rec.FileKey, att.Name, wantPath, att.FileKey)
+	}
+	if rec.ThumbPath != wantThumbPath {
+		t.Errorf("thumb_path = %q, want 斜杠化后的 ThumbPath %q", rec.ThumbPath, wantThumbPath)
+	}
+	if rec.Suffix != "png" {
+		t.Errorf("suffix = %q, want %q", rec.Suffix, "png")
+	}
+	if rec.Size != att.Size {
+		t.Errorf("size = %d, want %d", rec.Size, att.Size)
+	}
+	if rec.Width != att.Width || rec.Height != att.Height || rec.Width != 2 || rec.Height != 2 {
+		t.Errorf("width/height = %d/%d, want %d/%d 且各自为 2", rec.Width, rec.Height, att.Width, att.Height)
+	}
+	if rec.Type != consts.AttachmentTypeLocal {
+		t.Errorf("type = %v, want %v", rec.Type, consts.AttachmentTypeLocal)
+	}
+	if rec.MediaType != att.MediaType {
+		t.Errorf("media_type = %q, want %q", rec.MediaType, att.MediaType)
 	}
 }
 
-// 场景二：同名二次上传得到不同随机名，两条记录共存
+// 场景二：同名二次上传得到不同随机名，两条记录共存。
+// 注意：本文件未覆盖「随机名撞库→追加时间戳」分支——10 位 base62 撞库概率≈0，端到端无法稳定复现；
+// 该分支由 file_descriptor_test.go 的 TestRenameStrategyRunsBeforeDupCheck 在 fd 层钉住。
 func TestLocalUploadSameNameTwiceGetsDistinctNames(t *testing.T) {
 	storage, _ := setupLocalUpload(t)
 	ctx := context.Background()
@@ -226,5 +255,26 @@ func TestLocalUploadSameNameTwiceGetsDistinctNames(t *testing.T) {
 	}
 	if count != 2 {
 		t.Errorf("附件表行数 = %d, want 2（两条记录共存）", count)
+	}
+
+	// count==2 只证明行数；把两行一起查回，验证每行内容各归其主而非彼此错乱
+	firstPath, secondPath := filepath.ToSlash(first.Path), filepath.ToSlash(second.Path)
+	recs, err := dal.Q.Attachment.WithContext(ctx).
+		Where(dal.Q.Attachment.Path.In(firstPath, secondPath)).Find()
+	if err != nil {
+		t.Fatalf("查回两条附件失败: %v", err)
+	}
+	if len(recs) != 2 {
+		t.Fatalf("按两次 Path 查回 %d 行, want 2", len(recs))
+	}
+	// 两行 FileKey 的集合应与两次上传的 Path 集合一致（first/second 的 Path 已断言互不相同）
+	wantFileKeys := map[string]bool{firstPath: true, secondPath: true}
+	for _, r := range recs {
+		if !wantFileKeys[r.FileKey] {
+			t.Errorf("库内 file_key = %q, 不属于两次上传的 Path 集合 {%q, %q}", r.FileKey, firstPath, secondPath)
+		}
+		if r.Name != "微信截图" {
+			t.Errorf("库内 name = %q, want 两行都保留原始基名 %q", r.Name, "微信截图")
+		}
 	}
 }

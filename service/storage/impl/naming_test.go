@@ -83,8 +83,10 @@ func TestStorageName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("storageName() err = %v", err)
 	}
-	if len(name) != nameSize {
-		t.Errorf("storageName() 长度 = %d, want %d", len(name), nameSize)
+	// 长度用硬编码字面量断言：若复用 nameSize，常量与断言会同向修改、测试恒绿，钉不住契约。
+	// 与常量解耦正是目的，改 nameSize 时这里必须变红。
+	if len(name) != 10 {
+		t.Errorf("storageName() 长度 = %d, want 10（随机名长度契约）", len(name))
 	}
 	for _, r := range name {
 		if !strings.ContainsRune(nameAlphabet, r) {
