@@ -109,3 +109,47 @@ func defaultIfEmpty(s, def string) string {
 	}
 	return s
 }
+
+// attrChars 是 RFC 5987 允许在 ext-value 中原样出现的非字母数字字符
+const attrChars = "!#$&+-.^_`|~"
+
+// contentDisposition 生成 inline 型 Content-Disposition 头值：
+// filename 供只认 ASCII 的老客户端降级，filename* 用 RFC 5987 百分号编码保住中文原名。
+// 一律 inline 是为了不改变浏览器直接打开图片/PDF/视频链接时的预览行为；
+// 另存为/下载时浏览器同样读 filename* 里的原名。
+func contentDisposition(filename string) string {
+	displayName := uploadDisplayName(filename)
+	return fmt.Sprintf("inline; filename=%q; filename*=UTF-8''%s",
+		asciiFallback(displayName), rfc5987Encode(displayName))
+}
+
+// asciiFallback 把非 ASCII 字符、引号、反斜杠与控制字符替换为下划线
+func asciiFallback(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r > 0x7E, r < 0x20, r == '"', r == '\\':
+			b.WriteByte('_')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return defaultIfEmpty(b.String(), "download")
+}
+
+// rfc5987Encode 按 attr-char 集合逐字节百分号编码（输入按 UTF-8 字节处理，故中文原名被完整编码）
+func rfc5987Encode(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		alnum := (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+		if !alnum && strings.IndexByte(attrChars, c) < 0 {
+			fmt.Fprintf(&b, "%%%02X", c)
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}

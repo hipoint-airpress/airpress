@@ -137,3 +137,20 @@ func TestUploadDisplayName(t *testing.T) {
 		}
 	}
 }
+
+func TestContentDisposition(t *testing.T) {
+	cases := []struct {
+		filename string
+		want     string
+	}{
+		{"report.pdf", `inline; filename="report.pdf"; filename*=UTF-8''report.pdf`},
+		{"微信截图.jpg", `inline; filename="____.jpg"; filename*=UTF-8''%E5%BE%AE%E4%BF%A1%E6%88%AA%E5%9B%BE.jpg`},
+		{`a"b.jpg`, `inline; filename="a_b.jpg"; filename*=UTF-8''a%22b.jpg`},
+		{"空格 测试.txt", `inline; filename="__ __.txt"; filename*=UTF-8''%E7%A9%BA%E6%A0%BC%20%E6%B5%8B%E8%AF%95.txt`},
+	}
+	for _, c := range cases {
+		if got := contentDisposition(c.filename); got != c.want {
+			t.Errorf("contentDisposition(%q)\n got = %q\nwant = %q", c.filename, got, c.want)
+		}
+	}
+}
