@@ -1,6 +1,7 @@
 package filestorageimpl
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -74,5 +75,27 @@ func TestCloudSubPath(t *testing.T) {
 		if got := cloudSubPath(c.source, oct, "a.jpg"); got != c.want {
 			t.Errorf("cloudSubPath(%q) = %q, want %q", c.source, got, c.want)
 		}
+	}
+}
+
+func TestStorageName(t *testing.T) {
+	name, err := storageName()
+	if err != nil {
+		t.Fatalf("storageName() err = %v", err)
+	}
+	if len(name) != nameSize {
+		t.Errorf("storageName() 长度 = %d, want %d", len(name), nameSize)
+	}
+	for _, r := range name {
+		if !strings.ContainsRune(nameAlphabet, r) {
+			t.Errorf("storageName() = %q 含非 base62 字符 %q", name, r)
+		}
+	}
+	other, err := storageName()
+	if err != nil {
+		t.Fatalf("storageName() err = %v", err)
+	}
+	if name == other {
+		t.Errorf("连续两次 storageName() 结果相同: %q", name)
 	}
 }

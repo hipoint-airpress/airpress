@@ -6,7 +6,22 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/aidarkhanov/nanoid/v2"
 )
+
+const (
+	// nameAlphabet 是随机名用的 base62 字母表；nanoid 默认字母表含 - 和 _，这里不用
+	nameAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	// nameSize 是随机名长度，样本空间 62^10 ≈ 8.4e17
+	nameSize = 10
+)
+
+// storageName 生成长度为 nameSize 的 base62 随机文件名主体（不含扩展名）。
+// 签名与 filestorageimpl.renameFunc 一致，驱动可直接 as 改名策略传入文件描述符。
+func storageName() (string, error) {
+	return nanoid.GenerateString(nameAlphabet, nameSize)
+}
 
 // categoryFile 是未知扩展名的兜底类型目录
 const categoryFile = "file"
