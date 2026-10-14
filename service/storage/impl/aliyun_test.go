@@ -21,20 +21,25 @@ func (s aliyunOptionStub) GetOrByDefaultWithErr(ctx context.Context, p property.
 	return defaultValue, nil
 }
 
-func newAliyunForTest() *Aliyun {
-	return NewAliyun(aliyunOptionStub{values: map[string]string{
+// newAliyunForTest 用给定的属性覆盖项构造 Aliyun；未提供的属性回落到其 DefaultValue
+func newAliyunForTest(overrides map[string]string) *Aliyun {
+	values := map[string]string{
 		property.AliOssEndpoint.KeyValue:     "oss-cn-hangzhou.aliyuncs.com",
 		property.AliOssBucketName.KeyValue:   "mybucket",
 		property.AliOssAccessKey.KeyValue:    "ak",
 		property.AliOssAccessSecret.KeyValue: "sk",
 		property.AliOssProtocol.KeyValue:     "https://",
-	}})
+	}
+	for k, v := range overrides {
+		values[k] = v
+	}
+	return NewAliyun(aliyunOptionStub{values: values})
 }
 
 // OSS 图片处理参数必须能原样往返：GetFilePath 先经 url.JoinPath 转义、再经 url.PathUnescape 还原。
 // 这条断言是用 ?x-oss-process=... 形态落库的前提。
 func TestAliyunGetFilePathKeepsProcessQuery(t *testing.T) {
-	got, err := newAliyunForTest().GetFilePath(context.Background(), "img/2026/10/abc.png?x-oss-process=style/thumb")
+	got, err := newAliyunForTest(nil).GetFilePath(context.Background(), "img/2026/10/abc.png?x-oss-process=style/thumb")
 	if err != nil {
 		t.Fatalf("GetFilePath() err = %v", err)
 	}
@@ -60,6 +65,47 @@ func TestOSSProcessQuery(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			if got := ossProcessQuery(c.rule); got != c.want {
 				t.Errorf("ossProcessQuery(%q) = %q, want %q", c.rule, got, c.want)
+			}
+		})
+	}
+}
+
+// 配置值经 getAliOSSClient 解析后，字段存的必须是可直接拼接的最终查询串。
+// 缺少这条断言时，删掉 ossProcessQuery 调用（退回原始配置值拼接）不会被任何测试发现。
+func TestAliyunClientStoresParsedStyleQuery(t *testing.T) {
+	cases := []struct {
+		name               string
+		overrides          map[string]string
+		wantStyle          string
+		wantThumbnailStyle string
+	}{
+		{
+			name: "非空规则解析为带前缀的查询串",
+			overrides: map[string]string{
+				property.AliOssStyleRule.KeyValue:          "image/resize,w_800",
+				property.AliOssThumbnailStyleRule.KeyValue: "thumb",
+			},
+			wantStyle:          "?x-oss-process=image/resize,w_800",
+			wantThumbnailStyle: "?x-oss-process=style/thumb",
+		},
+		{
+			name:               "两个规则都不配时字段为空串",
+			overrides:          nil,
+			wantStyle:          "",
+			wantThumbnailStyle: "",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			client, err := newAliyunForTest(c.overrides).getAliOSSClient(context.Background())
+			if err != nil {
+				t.Fatalf("getAliOSSClient() err = %v", err)
+			}
+			if client.Style != c.wantStyle {
+				t.Errorf("Style = %q, want %q", client.Style, c.wantStyle)
+			}
+			if client.ThumbnailStyle != c.wantThumbnailStyle {
+				t.Errorf("ThumbnailStyle = %q, want %q", client.ThumbnailStyle, c.wantThumbnailStyle)
 			}
 		})
 	}

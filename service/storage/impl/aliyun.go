@@ -30,11 +30,13 @@ func NewAliyun(optionService service.OptionService) *Aliyun {
 
 type aliyunClient struct {
 	*oss.Client
-	Bucket         *oss.Bucket
-	BucketName     string
-	EndPoint       string
-	Source         string
-	Style          string
+	Bucket     *oss.Bucket
+	BucketName string
+	EndPoint   string
+	Source     string
+	// Style 是主图的 OSS 处理参数查询串（已含 ?x-oss-process= 前缀），空串表示不处理
+	Style string
+	// ThumbnailStyle 是缩略图的 OSS 处理参数查询串（已含 ?x-oss-process= 前缀），空串表示不处理
 	ThumbnailStyle string
 	Domain         string
 	Protocol       string
@@ -89,11 +91,7 @@ func (a *Aliyun) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (
 		return nil, xerr.WithStatus(err, xerr.StatusInternalServerError)
 	}
 	err = handleImageMeta(file, result, func(_ image.Image) (string, error) {
-		if aliyunClientInstance.ThumbnailStyle != "" {
-			return fd.getRelativePath() + aliyunClientInstance.ThumbnailStyle, nil
-		} else {
-			return fd.getRelativePath(), nil
-		}
+		return fd.getRelativePath() + aliyunClientInstance.ThumbnailStyle, nil
 	})
 	if err != nil {
 		return nil, err
@@ -170,8 +168,9 @@ func (a *Aliyun) getAliOSSClient(ctx context.Context) (*aliyunClient, error) {
 	aliyunClientInstance.Source = source
 	aliyunClientInstance.BucketName = bucketName
 	aliyunClientInstance.EndPoint = endPoint
-	aliyunClientInstance.ThumbnailStyle = thumbnailStyleRule
-	aliyunClientInstance.Style = styleRule
+	// 存解析后的最终查询串，使用点直接拼接、不再关心配置形态
+	aliyunClientInstance.ThumbnailStyle = ossProcessQuery(thumbnailStyleRule)
+	aliyunClientInstance.Style = ossProcessQuery(styleRule)
 	aliyunClientInstance.Domain = domain
 	aliyunClientInstance.Protocol = protocol
 	aliyunClientInstance.Bucket, err = client.Bucket(bucketName)
