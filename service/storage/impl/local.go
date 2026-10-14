@@ -110,6 +110,8 @@ func (l *LocalFileStorage) Upload(ctx context.Context, fileHeader *multipart.Fil
 		if fd.getExtensionName() == "webp" {
 			return fd.getRelativePath(), nil
 		}
+		// 必须与主图复用同一 fixedName/subPath：Delete 按主图基名拼 "-thumbnail"（见本文件 Delete），
+		// 另起一次随机名会留下删不掉的孤儿缩略图。
 		thumbnailFd, err := newLocalFileDescriptor(
 			withOriginalName(fileHeader.Filename),
 			withBasePath(l.Config.AirPress.WorkDir),
