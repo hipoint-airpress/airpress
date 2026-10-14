@@ -158,7 +158,7 @@ func (a *attachmentServiceImpl) Upload(ctx context.Context, fileHeader *multipar
 		Path:      strings.ReplaceAll(attachmentDTO.Path, string(os.PathSeparator), "/"),
 		Size:      attachmentDTO.Size,
 		Suffix:    attachmentDTO.Suffix,
-		ThumbPath: strings.ReplaceAll(attachmentDTO.Path, string(os.PathSeparator), "/"),
+		ThumbPath: strings.ReplaceAll(attachmentDTO.ThumbPath, string(os.PathSeparator), "/"),
 		Type:      attachmentDTO.AttachmentType,
 		Width:     attachmentDTO.Width,
 	}
