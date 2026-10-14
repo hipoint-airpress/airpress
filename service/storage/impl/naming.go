@@ -3,7 +3,6 @@ package filestorageimpl
 import (
 	"fmt"
 	"path"
-	"strconv"
 	"strings"
 	"time"
 
@@ -18,7 +17,7 @@ const (
 )
 
 // storageName 生成长度为 nameSize 的 base62 随机文件名主体（不含扩展名）。
-// 签名与 filestorageimpl.renameFunc 一致，驱动可直接 as 改名策略传入文件描述符。
+// 签名为 func() (string, error)，与文件描述符的 withRename 改名策略同形，可直接作为策略传入。
 func storageName() (string, error) {
 	return nanoid.GenerateString(nameAlphabet, nameSize)
 }
@@ -46,9 +45,8 @@ func categoryOf(ext string) string {
 
 // storageSubPath 返回形如 "img/2026/10" 的类型+年月目录（以 / 分隔，不含存储前缀）
 func storageSubPath(t time.Time, filename string) string {
-	year, month, _ := t.Date()
 	_, ext := splitBaseName(filename)
-	return path.Join(categoryOf(ext), strconv.Itoa(year), fmt.Sprintf("%02d", int(month)))
+	return path.Join(categoryOf(ext), t.Format("2006/01"))
 }
 
 // cloudSubPath 拼接云存储的目录前缀与类型/年月目录；前缀为空时不产生多余层级
@@ -68,15 +66,13 @@ func splitBaseName(filename string) (base string, ext string) {
 		name = name[i+1:]
 	}
 	dot := strings.LastIndexByte(name, '.')
-	switch {
-	case dot <= 0:
+	if dot <= 0 {
 		return name, ""
-	default:
-		return name[:dot], name[dot+1:]
 	}
+	return name[:dot], name[dot+1:]
 }
 
-// attachmentNameMaxLen 对应 attachment.name 列的 varchar(255)，超长原名按 rune 截断避免插入报错
+// attachmentNameMaxLen 是原始文件名的统一长度上限（对应 attachment.name 列宽，也用于 Content-Disposition 展示名），超长按 rune 截断
 const attachmentNameMaxLen = 255
 
 // uploadBaseName 取原始上传文件名的基名（去路径、去扩展名），用于 attachment.name
@@ -135,7 +131,7 @@ func asciiFallback(s string) string {
 			b.WriteRune(r)
 		}
 	}
-	return defaultIfEmpty(b.String(), "download")
+	return b.String()
 }
 
 // rfc5987Encode 按 attr-char 集合逐字节百分号编码（输入按 UTF-8 字节处理，故中文原名被完整编码）

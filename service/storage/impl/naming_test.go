@@ -110,6 +110,7 @@ func TestUploadBaseName(t *testing.T) {
 		{".htaccess", ".htaccess"},
 		{"photo", "photo"},
 		{`C:\fakepath\p.png`, "p"},
+		{"dir/sub/p.png", "p"},
 		{"", "attachment"},
 		{strings.Repeat("名", 300) + ".txt", strings.Repeat("名", 255)},
 	}
@@ -127,6 +128,7 @@ func TestUploadDisplayName(t *testing.T) {
 	}{
 		{"微信截图.jpg", "微信截图.jpg"},
 		{`C:\fakepath\p.png`, "p.png"},
+		{"dir/sub/p.png", "p.png"},
 		{"photo", "photo"},
 		{".htaccess", ".htaccess"},
 		{"", "attachment"},
