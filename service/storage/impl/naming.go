@@ -75,3 +75,37 @@ func splitBaseName(filename string) (base string, ext string) {
 		return name[:dot], name[dot+1:]
 	}
 }
+
+// attachmentNameMaxLen 对应 attachment.name 列的 varchar(255)，超长原名按 rune 截断避免插入报错
+const attachmentNameMaxLen = 255
+
+// uploadBaseName 取原始上传文件名的基名（去路径、去扩展名），用于 attachment.name
+func uploadBaseName(filename string) string {
+	base, _ := splitBaseName(filename)
+	return truncateRunes(defaultIfEmpty(base, "attachment"), attachmentNameMaxLen)
+}
+
+// uploadDisplayName 取原始上传文件名全名（去路径、含扩展名），用于 Content-Disposition 还原
+func uploadDisplayName(filename string) string {
+	base, ext := splitBaseName(filename)
+	if ext != "" {
+		base += "." + ext
+	}
+	return truncateRunes(defaultIfEmpty(base, "attachment"), attachmentNameMaxLen)
+}
+
+// truncateRunes 按 rune 截断，避免把多字节汉字切坏
+func truncateRunes(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max])
+}
+
+func defaultIfEmpty(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
+}

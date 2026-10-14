@@ -99,3 +99,41 @@ func TestStorageName(t *testing.T) {
 		t.Errorf("连续两次 storageName() 结果相同: %q", name)
 	}
 }
+
+func TestUploadBaseName(t *testing.T) {
+	cases := []struct {
+		filename string
+		want     string
+	}{
+		{"微信截图.jpg", "微信截图"},
+		{"a.tar.gz", "a.tar"},
+		{".htaccess", ".htaccess"},
+		{"photo", "photo"},
+		{`C:\fakepath\p.png`, "p"},
+		{"", "attachment"},
+		{strings.Repeat("名", 300) + ".txt", strings.Repeat("名", 255)},
+	}
+	for _, c := range cases {
+		if got := uploadBaseName(c.filename); got != c.want {
+			t.Errorf("uploadBaseName(%q) = %q, want %q", c.filename, got, c.want)
+		}
+	}
+}
+
+func TestUploadDisplayName(t *testing.T) {
+	cases := []struct {
+		filename string
+		want     string
+	}{
+		{"微信截图.jpg", "微信截图.jpg"},
+		{`C:\fakepath\p.png`, "p.png"},
+		{"photo", "photo"},
+		{".htaccess", ".htaccess"},
+		{"", "attachment"},
+	}
+	for _, c := range cases {
+		if got := uploadDisplayName(c.filename); got != c.want {
+			t.Errorf("uploadDisplayName(%q) = %q, want %q", c.filename, got, c.want)
+		}
+	}
+}
