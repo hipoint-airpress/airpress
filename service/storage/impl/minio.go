@@ -47,7 +47,6 @@ func (m *MinIO) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (*
 		withBaseURL(minioClientInstance.Protocol+minioClientInstance.EndPoint+"/"+minioClientInstance.BucketName),
 		withSubURLPath(cloudSubPath(minioClientInstance.Source, time.Now(), fileHeader.Filename)),
 		withOriginalNameURLOption(fileHeader.Filename),
-		withRenameURLOption(storageName),
 	)
 	if err != nil {
 		return nil, xerr.WithStatus(err, xerr.StatusInternalServerError)

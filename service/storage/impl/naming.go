@@ -16,9 +16,10 @@ const (
 	nameSize = 10
 )
 
-// storageName 生成长度为 nameSize 的 base62 随机文件名主体（不含扩展名）。
-// 签名为 func() (string, error)，与文件描述符的 withRename 改名策略同形，可直接作为策略传入。
-func storageName() (string, error) {
+// randomFilename 生成长度为 nameSize 的 base62 随机文件名主体（不含扩展名）。
+// 它是文件描述符未显式指定改名策略时的默认改名函数，也可用 withRename/withRenameURLOption
+// 显式传入（签名与 renameFunc 相同）。
+func randomFilename() (string, error) {
 	return nanoid.GenerateString(nameAlphabet, nameSize)
 }
 

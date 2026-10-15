@@ -49,7 +49,6 @@ func (l *LocalFileStorage) Upload(ctx context.Context, fileHeader *multipart.Fil
 		withOriginalName(fileHeader.Filename),
 		withBasePath(l.Config.AirPress.WorkDir),
 		withSubPath(subPath),
-		withRename(storageName),
 	)
 	if err != nil {
 		return nil, err

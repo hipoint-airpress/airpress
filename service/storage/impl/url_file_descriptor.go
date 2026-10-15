@@ -110,7 +110,7 @@ func withOriginalNameURLOption(originalName string) urlOption {
 	}
 }
 
-// withRenameURLOption 指定改名策略；不指定时沿用原始文件名的基名
+// withRenameURLOption 指定改名策略；不指定时默认使用 randomFilename 生成随机名
 func withRenameURLOption(fn renameFunc) urlOption {
 	return func(f *urlFileDescriptor) {
 		f.Rename = fn

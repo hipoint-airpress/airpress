@@ -78,27 +78,27 @@ func TestCloudSubPath(t *testing.T) {
 	}
 }
 
-func TestStorageName(t *testing.T) {
-	name, err := storageName()
+func TestRandomFilename(t *testing.T) {
+	name, err := randomFilename()
 	if err != nil {
-		t.Fatalf("storageName() err = %v", err)
+		t.Fatalf("randomFilename() err = %v", err)
 	}
 	// 长度用硬编码字面量断言：若复用 nameSize，常量与断言会同向修改、测试恒绿，钉不住契约。
 	// 与常量解耦正是目的，改 nameSize 时这里必须变红。
 	if len(name) != 10 {
-		t.Errorf("storageName() 长度 = %d, want 10（随机名长度契约）", len(name))
+		t.Errorf("randomFilename() 长度 = %d, want 10（随机名长度契约）", len(name))
 	}
 	for _, r := range name {
 		if !strings.ContainsRune(nameAlphabet, r) {
-			t.Errorf("storageName() = %q 含非 base62 字符 %q", name, r)
+			t.Errorf("randomFilename() = %q 含非 base62 字符 %q", name, r)
 		}
 	}
-	other, err := storageName()
+	other, err := randomFilename()
 	if err != nil {
-		t.Fatalf("storageName() err = %v", err)
+		t.Fatalf("randomFilename() err = %v", err)
 	}
 	if name == other {
-		t.Errorf("连续两次 storageName() 结果相同: %q", name)
+		t.Errorf("连续两次 randomFilename() 结果相同: %q", name)
 	}
 }
 

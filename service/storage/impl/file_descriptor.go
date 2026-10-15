@@ -15,7 +15,7 @@ type fileDescriptor interface {
 }
 
 // renameFunc 是改名策略：返回要使用的文件名主体（不含扩展名）。
-// 通过 withRename/withRenameURLOption 指定；不指定时沿用原始文件名基名。
+// 通过 withRename/withRenameURLOption 指定；不指定时默认使用 randomFilename 生成随机名。
 // 策略必须返回非空基名：返回空串会拼出 ".jpg" 这类隐藏文件式路径。
 type renameFunc = func() (string, error)
 
@@ -58,15 +58,15 @@ func newLocalFileDescriptor(opts ...fdOption) (fileDescriptor, error) {
 	return fd, nil
 }
 
-// rename 执行调用方用 withRename 指定的改名策略生成文件名主体（本功能用它生成随机名）；
-// 未指定策略时沿用原始文件名基名。
+// rename 执行改名策略生成文件名主体：优先用调用方经 withRename 指定的策略，
+// 未指定时默认用 randomFilename 生成随机名。
 //
 // 冲突不在此处检测：唯一在写入前生效的防护是存储层的条件写
 // （阿里云 oss.ForbidOverWrite、MinIO If-None-Match、本地 O_CREATE|O_EXCL，见各驱动的 Upload）。
 func rename(f fileDescriptor) error {
 	fn := f.getRename()
 	if fn == nil {
-		return nil
+		fn = randomFilename
 	}
 	name, err := fn()
 	if err != nil {
@@ -131,7 +131,7 @@ func withSubPath(subPath string) fdOption {
 	}
 }
 
-// withRename 指定改名策略；不指定时沿用原始文件名的基名
+// withRename 指定改名策略；不指定时默认使用 randomFilename 生成随机名
 func withRename(fn renameFunc) fdOption {
 	return func(f *localFileDescriptor) {
 		f.Rename = fn

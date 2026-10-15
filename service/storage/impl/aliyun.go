@@ -63,7 +63,6 @@ func (a *Aliyun) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (
 		withBaseURL(basePath),
 		withSubURLPath(cloudSubPath(aliyunClientInstance.Source, time.Now(), fileHeader.Filename)),
 		withOriginalNameURLOption(fileHeader.Filename),
-		withRenameURLOption(storageName),
 	)
 	if err != nil {
 		return nil, xerr.WithStatus(err, xerr.StatusInternalServerError)

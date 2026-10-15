@@ -2,9 +2,13 @@ package filestorageimpl
 
 import (
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+// randomNamePattern 钉住默认改名契约：10 位 base62 随机名主体
+var randomNamePattern = regexp.MustCompile(`^[0-9A-Za-z]{10}$`)
 
 // 改名策略生效：文件主体名取策略返回值，扩展名仍来自原始文件名
 func TestRenameStrategySetsName(t *testing.T) {
@@ -28,18 +32,32 @@ func TestRenameStrategySetsName(t *testing.T) {
 	}
 }
 
-// 没传策略时保持改造前的默认行为：沿用原始基名
-func TestDefaultBehaviorWithoutRename(t *testing.T) {
-	fd, err := newURLFileDescriptor(
-		withBaseURL("https://example.com"),
-		withSubURLPath("img/2026/10"),
-		withOriginalNameURLOption("photo.jpg"),
-	)
-	if err != nil {
-		t.Fatalf("newURLFileDescriptor() err = %v", err)
+// 未指定改名策略时默认用 randomFilename 生成随机名，且仍保留原始扩展名与目录前缀
+func TestURLDefaultRenameIsRandom(t *testing.T) {
+	newFD := func() fileDescriptor {
+		fd, err := newURLFileDescriptor(
+			withBaseURL("https://example.com"),
+			withSubURLPath("img/2026/10"),
+			withOriginalNameURLOption("photo.jpg"),
+		)
+		if err != nil {
+			t.Fatalf("newURLFileDescriptor() err = %v", err)
+		}
+		return fd
 	}
-	if got := fd.getRelativePath(); got != "img/2026/10/photo.jpg" {
-		t.Errorf("未指定策略时应沿用原始文件名, getRelativePath() = %q", got)
+	first, second := newFD(), newFD()
+
+	if !randomNamePattern.MatchString(first.getFileName()) {
+		t.Errorf("默认改名应为 10 位 base62 随机名, getFileName() = %q", first.getFileName())
+	}
+	if got := first.getExtensionName(); got != "jpg" {
+		t.Errorf("getExtensionName() = %q, want %q", got, "jpg")
+	}
+	if !strings.HasPrefix(first.getRelativePath(), "img/2026/10/") || !strings.HasSuffix(first.getRelativePath(), ".jpg") {
+		t.Errorf("默认改名不应丢失前缀或扩展名, getRelativePath() = %q", first.getRelativePath())
+	}
+	if first.getFileName() == second.getFileName() {
+		t.Errorf("两次默认改名的结果相同: %q", first.getFileName())
 	}
 }
 
@@ -142,8 +160,8 @@ func TestLocalThumbnailFollowsMainName(t *testing.T) {
 	}
 }
 
-// 本地 fd 不传策略时的默认行为不受影响
-func TestLocalDefaultBehaviorWithoutRename(t *testing.T) {
+// 本地 fd 未指定策略时同样默认随机改名
+func TestLocalDefaultRenameIsRandom(t *testing.T) {
 	fd, err := newLocalFileDescriptor(
 		withOriginalName("photo.png"),
 		withBasePath("/data/airpress"),
@@ -152,7 +170,10 @@ func TestLocalDefaultBehaviorWithoutRename(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newLocalFileDescriptor() err = %v", err)
 	}
-	if got := fd.getRelativePath(); got != "upload/img/2026/10/photo.png" {
-		t.Errorf("getRelativePath() = %q, want %q", got, "upload/img/2026/10/photo.png")
+	if !randomNamePattern.MatchString(fd.getFileName()) {
+		t.Errorf("默认改名应为 10 位 base62 随机名, getFileName() = %q", fd.getFileName())
+	}
+	if got := fd.getExtensionName(); got != "png" {
+		t.Errorf("getExtensionName() = %q, want %q", got, "png")
 	}
 }
