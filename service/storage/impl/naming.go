@@ -142,7 +142,7 @@ func rfc5987Encode(s string) string {
 		c := s[i]
 		alnum := (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 		if !alnum && strings.IndexByte(attrChars, c) < 0 {
-			fmt.Fprintf(&b, "%%%02X", c)
+			_, _ = fmt.Fprintf(&b, "%%%02X", c)
 			continue
 		}
 		b.WriteByte(c)

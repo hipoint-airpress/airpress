@@ -42,6 +42,13 @@ type aliyunClient struct {
 	Protocol       string
 }
 
+const (
+	// ossProcessPrefix 是 OSS 图片处理参数的查询串前缀，直接追加在对象 key 之后
+	ossProcessPrefix = "?x-oss-process="
+	// ossStylePrefix 表示配置值是 OSS 控制台里创建的样式名
+	ossStylePrefix = "style/"
+)
+
 func (a *Aliyun) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (*dto.AttachmentDTO, error) {
 	aliyunClientInstance, err := a.getAliOSSClient(ctx)
 	if err != nil {
@@ -181,13 +188,6 @@ func (a *Aliyun) getAliOSSClient(ctx context.Context) (*aliyunClient, error) {
 	}
 	return aliyunClientInstance, nil
 }
-
-const (
-	// ossProcessPrefix 是 OSS 图片处理参数的查询串前缀，直接追加在对象 key 之后
-	ossProcessPrefix = "?x-oss-process="
-	// ossStylePrefix 表示配置值是 OSS 控制台里创建的样式名
-	ossStylePrefix = "style/"
-)
 
 // ossProcessQuery 把配置的样式规则解析成可追加到对象 key 之后的查询串：
 // 含 "/" 视为完整处理表达式（image/resize,w_256），不含 "/" 视为样式名（thumb → style/thumb），
