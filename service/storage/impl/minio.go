@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/url"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -44,8 +45,7 @@ func (m *MinIO) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (*
 
 	fd, err := newURLFileDescriptor(
 		withBaseURL(minioClientInstance.Protocol+minioClientInstance.EndPoint+"/"+minioClientInstance.BucketName),
-		withSubURLPath(minioClientInstance.Source),
-		withShouldRenameURLOption(commonRenamePredicateFunc(ctx, consts.AttachmentTypeMinIO)),
+		withSubURLPath(cloudSubPath(minioClientInstance.Source, time.Now(), fileHeader.Filename)),
 		withOriginalNameURLOption(fileHeader.Filename),
 	)
 	if err != nil {
@@ -56,14 +56,20 @@ func (m *MinIO) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (*
 		return nil, xerr.WithStatus(err, xerr.StatusInternalServerError).WithMsg("open upload file error")
 	}
 	defer func() { _ = file.Close() }()
-	_, err = minioClientInstance.PutObject(ctx, minioClientInstance.BucketName, fd.getRelativePath(), file, fileHeader.Size, minio.PutObjectOptions{})
+	// 原始文件名写进对象元数据，直链下载即可还原
+	putOpts := minio.PutObjectOptions{
+		ContentDisposition: contentDisposition(fileHeader.Filename),
+	}
+	// 系统语义为「不允许覆盖」：发 If-None-Match: *，对象已存在时服务端返回 412
+	putOpts.SetMatchETagExcept("*")
+	_, err = minioClientInstance.PutObject(ctx, minioClientInstance.BucketName, fd.getRelativePath(), file, fileHeader.Size, putOpts)
 	if err != nil {
 		return nil, xerr.WithMsg(err, "upload to minio error").WithStatus(xerr.StatusInternalServerError).WithErrMsgf("err=%v", err)
 	}
 
 	mediaType, _ := getFileContentType(file)
 	result := &dto.AttachmentDTO{
-		Name:           fd.getFileName(),
+		Name:           uploadBaseName(fileHeader.Filename),
 		Path:           fd.getRelativePath(),
 		FileKey:        fd.getRelativePath(),
 		Suffix:         fd.getExtensionName(),

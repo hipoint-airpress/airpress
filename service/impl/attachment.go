@@ -47,7 +47,7 @@ func (a *attachmentServiceImpl) ConvertToDTOs(ctx context.Context, attachments [
 		if err != nil {
 			log.CtxError(ctx, "GetFilePath err", zap.Error(err))
 		}
-		thumbPath, err := a.FileStorageComposite.GetFileStorage(attachment.Type).GetFilePath(ctx, attachment.ThumbPath)
+		thumbPath, err := a.getThumbURL(ctx, attachment.Type, attachment.ThumbPath)
 		if err != nil {
 			log.CtxError(ctx, "GetFilePath err", zap.Error(err))
 		}
@@ -62,6 +62,15 @@ func NewAttachmentService(optionService service.OptionService, fileStorageCompos
 		FileStorageComposite: fileStorageComposite,
 		OptionService:        optionService,
 	}
+}
+
+// getThumbURL 返回缩略图的可访问地址。空 ThumbPath 表示该附件没有缩略图（非图片附件即如此），
+// 直接返回空串——把空串交给 GetFilePath 会经 url.JoinPath 拼出存储桶根地址这类无意义 URL。
+func (a *attachmentServiceImpl) getThumbURL(ctx context.Context, attachmentType consts.AttachmentType, thumbPath string) (string, error) {
+	if thumbPath == "" {
+		return "", nil
+	}
+	return a.FileStorageComposite.GetFileStorage(attachmentType).GetFilePath(ctx, thumbPath)
 }
 
 func (a *attachmentServiceImpl) ConvertToDTO(ctx context.Context, attachment *entity.Attachment) (*dto.AttachmentDTO, error) {
@@ -82,7 +91,7 @@ func (a *attachmentServiceImpl) ConvertToDTO(ctx context.Context, attachment *en
 	if err != nil {
 		return nil, err
 	}
-	thumbPath, err := a.FileStorageComposite.GetFileStorage(attachment.Type).GetFilePath(ctx, attachment.ThumbPath)
+	thumbPath, err := a.getThumbURL(ctx, attachment.Type, attachment.ThumbPath)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +167,7 @@ func (a *attachmentServiceImpl) Upload(ctx context.Context, fileHeader *multipar
 		Path:      strings.ReplaceAll(attachmentDTO.Path, string(os.PathSeparator), "/"),
 		Size:      attachmentDTO.Size,
 		Suffix:    attachmentDTO.Suffix,
-		ThumbPath: strings.ReplaceAll(attachmentDTO.Path, string(os.PathSeparator), "/"),
+		ThumbPath: strings.ReplaceAll(attachmentDTO.ThumbPath, string(os.PathSeparator), "/"),
 		Type:      attachmentDTO.AttachmentType,
 		Width:     attachmentDTO.Width,
 	}
@@ -172,7 +181,7 @@ func (a *attachmentServiceImpl) Upload(ctx context.Context, fileHeader *multipar
 	if err != nil {
 		return nil, err
 	}
-	attachmentDTO.ThumbPath, err = fileStorage.GetFilePath(ctx, attachmentEntity.ThumbPath)
+	attachmentDTO.ThumbPath, err = a.getThumbURL(ctx, attachmentType, attachmentEntity.ThumbPath)
 	if err != nil {
 		return nil, err
 	}

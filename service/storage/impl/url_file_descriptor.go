@@ -14,7 +14,7 @@ type urlFileDescriptor struct {
 	BasePath        string
 	SubPath         string
 	AutomaticRename bool
-	ShouldRename    func(relativePath string) (bool, error)
+	Rename          renameFunc
 	Suffix          string
 }
 
@@ -86,8 +86,8 @@ func (f *urlFileDescriptor) setFileName(name string) {
 	f.Name = name
 }
 
-func (f *urlFileDescriptor) getShouldRename() shouldRename {
-	return f.ShouldRename
+func (f *urlFileDescriptor) getRename() renameFunc {
+	return f.Rename
 }
 
 type urlOption func(f *urlFileDescriptor)
@@ -110,8 +110,9 @@ func withOriginalNameURLOption(originalName string) urlOption {
 	}
 }
 
-func withShouldRenameURLOption(fn func(relativePath string) (bool, error)) urlOption {
+// withRenameURLOption 指定改名策略；不指定时默认使用 randomFilename 生成随机名
+func withRenameURLOption(fn renameFunc) urlOption {
 	return func(f *urlFileDescriptor) {
-		f.ShouldRename = fn
+		f.Rename = fn
 	}
 }

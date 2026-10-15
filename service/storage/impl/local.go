@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/disintegration/imaging"
@@ -21,7 +20,6 @@ import (
 	"github.com/hipoint-airpress/airpress/log"
 	"github.com/hipoint-airpress/airpress/model/dto"
 	"github.com/hipoint-airpress/airpress/service"
-	"github.com/hipoint-airpress/airpress/util"
 	"github.com/hipoint-airpress/airpress/util/xerr"
 )
 
@@ -45,13 +43,12 @@ func NewLocalFileStorage(config *config.Config, optionService service.OptionServ
 
 func (l *LocalFileStorage) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (*dto.AttachmentDTO, error) {
 	now := time.Now()
-	year, month, _ := now.Date()
+	subPath := l.getUploadPath(now, fileHeader.Filename)
 
 	fd, err := newLocalFileDescriptor(
 		withOriginalName(fileHeader.Filename),
 		withBasePath(l.Config.AirPress.WorkDir),
-		withSubPath(l.getUploadPath(year, int(month))),
-		withShouldRename(commonRenamePredicateFunc(ctx, consts.AttachmentTypeLocal)),
+		withSubPath(subPath),
 	)
 	if err != nil {
 		return nil, err
@@ -72,7 +69,8 @@ func (l *LocalFileStorage) Upload(ctx context.Context, fileHeader *multipart.Fil
 	}
 	defer func() { _ = srcFile.Close() }()
 
-	out, err := os.Create(fd.getFullPath())
+	// O_EXCL：路径已存在则失败，避免静默截断覆盖既有附件（os.Create 是 O_CREATE|O_TRUNC，永不返回 ErrExist）
+	out, err := os.OpenFile(fd.getFullPath(), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if os.IsExist(err) {
 		return nil, xerr.WithMsg(err, "The file already exists!")
 	} else if err != nil {
@@ -92,7 +90,7 @@ func (l *LocalFileStorage) Upload(ctx context.Context, fileHeader *multipart.Fil
 
 	mediaType, _ := getFileContentType(srcFile)
 	attachment := dto.AttachmentDTO{
-		Name:           fd.getFileName(),
+		Name:           uploadBaseName(fileHeader.Filename),
 		Path:           fd.getRelativePath(),
 		FileKey:        fd.getRelativePath(),
 		Suffix:         fd.getExtensionName(),
@@ -105,13 +103,14 @@ func (l *LocalFileStorage) Upload(ctx context.Context, fileHeader *multipart.Fil
 		if fd.getExtensionName() == "webp" {
 			return fd.getRelativePath(), nil
 		}
+		// 缩略图名派生自主图 fd 的名字：回调发生在 handleImageMeta 内、主图 fd 构造完成之后，
+		// 因此 getFileName() 取到的是主图最终采用的名字，保证 Delete 按「主图基名 + -thumbnail」
+		// 推导（见本文件 Delete）始终命中。不要退回成独立生成随机名；subPath 复用主图那份，保证同目录。
 		thumbnailFd, err := newLocalFileDescriptor(
 			withOriginalName(fileHeader.Filename),
 			withBasePath(l.Config.AirPress.WorkDir),
-			withSubPath(l.getUploadPath(year, int(month))),
-			withShouldRename(func(r string) (bool, error) {
-				return false, nil
-			}),
+			withSubPath(subPath),
+			withRename(func() (string, error) { return fd.getFileName(), nil }),
 			withSuffix("-thumbnail"),
 		)
 		if err != nil {
@@ -181,11 +180,10 @@ func (l *LocalFileStorage) GetFilePath(ctx context.Context, relativePath string)
 	return fullPath, nil
 }
 
-func (l *LocalFileStorage) getUploadPath(year, month int) string {
-	uploadPath := filepath.Join(
+// getUploadPath 返回 upload/{类型}/{年}/{月} 形式的本地存储目录
+func (l *LocalFileStorage) getUploadPath(t time.Time, filename string) string {
+	return filepath.Clean(filepath.Join(
 		consts.AirPressUploadDir,
-		strconv.Itoa(year),
-		util.IfElse(month >= 10, strconv.Itoa(month), "0"+strconv.Itoa(month)).(string),
-	)
-	return filepath.Clean(uploadPath)
+		filepath.FromSlash(storageSubPath(t, filename)),
+	))
 }

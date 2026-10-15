@@ -3,6 +3,7 @@ module github.com/hipoint-airpress/airpress
 go 1.27
 
 require (
+	github.com/aidarkhanov/nanoid/v2 v2.0.5
 	github.com/aliyun/aliyun-oss-go-sdk v3.0.2+incompatible
 	github.com/clbanning/mxj/v2 v2.7.0
 	github.com/disintegration/imaging v1.6.2

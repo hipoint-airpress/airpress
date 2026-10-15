@@ -6,6 +6,8 @@ import (
 	"io"
 	"mime/multipart"
 	"net/url"
+	"strings"
+	"time"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 
@@ -28,15 +30,24 @@ func NewAliyun(optionService service.OptionService) *Aliyun {
 
 type aliyunClient struct {
 	*oss.Client
-	Bucket         *oss.Bucket
-	BucketName     string
-	EndPoint       string
-	Source         string
-	Style          string
+	Bucket     *oss.Bucket
+	BucketName string
+	EndPoint   string
+	Source     string
+	// Style 是主图的 OSS 处理参数查询串（已含 ?x-oss-process= 前缀），空串表示不处理
+	Style string
+	// ThumbnailStyle 是缩略图的 OSS 处理参数查询串（已含 ?x-oss-process= 前缀），空串表示不处理
 	ThumbnailStyle string
 	Domain         string
 	Protocol       string
 }
+
+const (
+	// ossProcessPrefix 是 OSS 图片处理参数的查询串前缀，直接追加在对象 key 之后
+	ossProcessPrefix = "?x-oss-process="
+	// ossStylePrefix 表示配置值是 OSS 控制台里创建的样式名
+	ossStylePrefix = "style/"
+)
 
 func (a *Aliyun) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (*dto.AttachmentDTO, error) {
 	aliyunClientInstance, err := a.getAliOSSClient(ctx)
@@ -50,8 +61,7 @@ func (a *Aliyun) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (
 	}
 	fd, err := newURLFileDescriptor(
 		withBaseURL(basePath),
-		withSubURLPath(aliyunClientInstance.Source),
-		withShouldRenameURLOption(commonRenamePredicateFunc(ctx, consts.AttachmentTypeAliOSS)),
+		withSubURLPath(cloudSubPath(aliyunClientInstance.Source, time.Now(), fileHeader.Filename)),
 		withOriginalNameURLOption(fileHeader.Filename),
 	)
 	if err != nil {
@@ -62,13 +72,20 @@ func (a *Aliyun) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (
 		return nil, xerr.WithStatus(err, xerr.StatusInternalServerError).WithMsg("open upload file error")
 	}
 	defer func() { _ = file.Close() }()
-	err = aliyunClientInstance.Bucket.PutObject(fd.getRelativePath(), file)
+	// 原始文件名写进对象元数据，此后直链访问由 OSS 直接返回该头，无需查库
+	err = aliyunClientInstance.Bucket.PutObject(
+		fd.getRelativePath(),
+		file,
+		oss.ContentDisposition(contentDisposition(fileHeader.Filename)),
+		// 系统语义为「不允许覆盖」：同名对象已存在时由 OSS 直接拒绝，而不是静默替换旧附件内容
+		oss.ForbidOverWrite(true),
+	)
 	if err != nil {
 		return nil, xerr.WithMsg(err, "upload to aliyun oss error: "+err.Error()).WithStatus(xerr.StatusInternalServerError)
 	}
 	mediaType, _ := getFileContentType(file)
 	result := &dto.AttachmentDTO{
-		Name:           fd.getFileName(),
+		Name:           uploadBaseName(fileHeader.Filename),
 		Path:           fd.getRelativePath() + aliyunClientInstance.Style,
 		FileKey:        fd.getRelativePath(),
 		Suffix:         fd.getExtensionName(),
@@ -81,11 +98,7 @@ func (a *Aliyun) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (
 		return nil, xerr.WithStatus(err, xerr.StatusInternalServerError)
 	}
 	err = handleImageMeta(file, result, func(_ image.Image) (string, error) {
-		if aliyunClientInstance.ThumbnailStyle != "" {
-			return fd.getRelativePath() + aliyunClientInstance.ThumbnailStyle, nil
-		} else {
-			return fd.getRelativePath(), nil
-		}
+		return fd.getRelativePath() + aliyunClientInstance.ThumbnailStyle, nil
 	})
 	if err != nil {
 		return nil, err
@@ -162,8 +175,9 @@ func (a *Aliyun) getAliOSSClient(ctx context.Context) (*aliyunClient, error) {
 	aliyunClientInstance.Source = source
 	aliyunClientInstance.BucketName = bucketName
 	aliyunClientInstance.EndPoint = endPoint
-	aliyunClientInstance.ThumbnailStyle = thumbnailStyleRule
-	aliyunClientInstance.Style = styleRule
+	// 存解析后的最终查询串，使用点直接拼接、不再关心配置形态
+	aliyunClientInstance.ThumbnailStyle = ossProcessQuery(thumbnailStyleRule)
+	aliyunClientInstance.Style = ossProcessQuery(styleRule)
 	aliyunClientInstance.Domain = domain
 	aliyunClientInstance.Protocol = protocol
 	aliyunClientInstance.Bucket, err = client.Bucket(bucketName)
@@ -171,4 +185,18 @@ func (a *Aliyun) getAliOSSClient(ctx context.Context) (*aliyunClient, error) {
 		return nil, xerr.WithStatus(err, xerr.StatusInternalServerError).WithMsg("failed to initialize aliyun oss client bucket: " + err.Error())
 	}
 	return aliyunClientInstance, nil
+}
+
+// ossProcessQuery 把配置的样式规则解析成可追加到对象 key 之后的查询串：
+// 含 "/" 视为完整处理表达式（image/resize,w_256），不含 "/" 视为样式名（thumb → style/thumb），
+// 空值返回空串表示不做任何处理。
+func ossProcessQuery(rule string) string {
+	trimmed := strings.TrimSpace(rule)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.Contains(trimmed, "/") {
+		return ossProcessPrefix + trimmed
+	}
+	return ossProcessPrefix + ossStylePrefix + trimmed
 }
