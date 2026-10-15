@@ -14,7 +14,6 @@ type urlFileDescriptor struct {
 	BasePath        string
 	SubPath         string
 	AutomaticRename bool
-	ShouldRename    func(relativePath string) (bool, error)
 	Rename          renameFunc
 	Suffix          string
 }
@@ -87,10 +86,6 @@ func (f *urlFileDescriptor) setFileName(name string) {
 	f.Name = name
 }
 
-func (f *urlFileDescriptor) getShouldRename() shouldRename {
-	return f.ShouldRename
-}
-
 func (f *urlFileDescriptor) getRename() renameFunc {
 	return f.Rename
 }
@@ -115,13 +110,7 @@ func withOriginalNameURLOption(originalName string) urlOption {
 	}
 }
 
-func withShouldRenameURLOption(fn func(relativePath string) (bool, error)) urlOption {
-	return func(f *urlFileDescriptor) {
-		f.ShouldRename = fn
-	}
-}
-
-// withRenameURLOption 指定改名策略；策略产出的路径仍会经 shouldRename 二次查重
+// withRenameURLOption 指定改名策略；不指定时沿用原始文件名的基名
 func withRenameURLOption(fn renameFunc) urlOption {
 	return func(f *urlFileDescriptor) {
 		f.Rename = fn

@@ -6,47 +6,25 @@ import (
 	"testing"
 )
 
-// 核心：改名策略先执行，二次查重必须拿策略改过之后的路径去判断
-func TestRenameStrategyRunsBeforeDupCheck(t *testing.T) {
-	var checked string
+// 改名策略生效：文件主体名取策略返回值，扩展名仍来自原始文件名
+func TestRenameStrategySetsName(t *testing.T) {
 	fd, err := newURLFileDescriptor(
 		withBaseURL("https://bucket.oss-cn-hangzhou.aliyuncs.com"),
 		withSubURLPath("img/2026/10"),
 		withOriginalNameURLOption("photo.jpg"),
-		withShouldRenameURLOption(func(relativePath string) (bool, error) {
-			checked = relativePath
-			return true, nil
-		}),
 		withRenameURLOption(func() (string, error) { return "24u24dfads", nil }),
 	)
 	if err != nil {
 		t.Fatalf("newURLFileDescriptor() err = %v", err)
 	}
-	if checked != "img/2026/10/24u24dfads.jpg" {
-		t.Errorf("shouldRename 收到的应是改名后的路径, got %q, want %q", checked, "img/2026/10/24u24dfads.jpg")
-	}
-	if !strings.HasPrefix(fd.getFileName(), "24u24dfads-") {
-		t.Errorf("判定重复后应追加时间戳, getFileName() = %q", fd.getFileName())
-	}
-	if fd.getExtensionName() != "jpg" {
-		t.Errorf("getExtensionName() = %q, want %q", fd.getExtensionName(), "jpg")
-	}
-}
-
-// 策略改完不重复时不加时间戳
-func TestRenameStrategyWithoutDup(t *testing.T) {
-	fd, err := newURLFileDescriptor(
-		withBaseURL("https://example.com"),
-		withSubURLPath("img/2026/10"),
-		withOriginalNameURLOption("photo.jpg"),
-		withShouldRenameURLOption(func(string) (bool, error) { return false, nil }),
-		withRenameURLOption(func() (string, error) { return "24u24dfads", nil }),
-	)
-	if err != nil {
-		t.Fatalf("newURLFileDescriptor() err = %v", err)
+	if got := fd.getFileName(); got != "24u24dfads" {
+		t.Errorf("getFileName() = %q, want %q", got, "24u24dfads")
 	}
 	if got := fd.getRelativePath(); got != "img/2026/10/24u24dfads.jpg" {
 		t.Errorf("getRelativePath() = %q, want %q", got, "img/2026/10/24u24dfads.jpg")
+	}
+	if got := fd.getExtensionName(); got != "jpg" {
+		t.Errorf("getExtensionName() = %q, want %q", got, "jpg")
 	}
 }
 
@@ -65,19 +43,31 @@ func TestDefaultBehaviorWithoutRename(t *testing.T) {
 	}
 }
 
-// 没传 shouldRename 时只执行策略，不做二次查重
-func TestRenameStrategyWithoutDupCheck(t *testing.T) {
-	fd, err := newURLFileDescriptor(
-		withBaseURL("https://example.com"),
-		withSubURLPath(""),
-		withOriginalNameURLOption("photo.jpg"),
-		withRenameURLOption(func() (string, error) { return "24u24dfads", nil }),
-	)
-	if err != nil {
-		t.Fatalf("newURLFileDescriptor() err = %v", err)
+// 只执行改名策略；目录前缀为空时不应产生多余层级
+func TestRenameStrategyOnly(t *testing.T) {
+	cases := []struct {
+		name    string
+		subPath string
+		want    string
+	}{
+		{"带类型年月前缀", "img/2026/10", "img/2026/10/24u24dfads.jpg"},
+		{"空前缀不产生多余层级", "", "24u24dfads.jpg"},
 	}
-	if got := fd.getRelativePath(); got != "24u24dfads.jpg" {
-		t.Errorf("空前缀不应产生多余层级, getRelativePath() = %q", got)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fd, err := newURLFileDescriptor(
+				withBaseURL("https://example.com"),
+				withSubURLPath(c.subPath),
+				withOriginalNameURLOption("photo.jpg"),
+				withRenameURLOption(func() (string, error) { return "24u24dfads", nil }),
+			)
+			if err != nil {
+				t.Fatalf("newURLFileDescriptor() err = %v", err)
+			}
+			if got := fd.getRelativePath(); got != c.want {
+				t.Errorf("getRelativePath() = %q, want %q", got, c.want)
+			}
+		})
 	}
 }
 
@@ -121,30 +111,26 @@ func TestLocalRenameStrategySharedByThumbnail(t *testing.T) {
 	}
 }
 
-// 核心机制：缩略图策略读主图 fd 的最终名（LocalFileStorage.Upload 缩略图 fd 就是这么构造的）。
-// 主图命中二次防重被追加毫秒时间戳后，缩略图名自动跟随，
-// 保证 LocalFileStorage.Delete 的「主图基名 + -thumbnail」推导在防重触发时同样成立。
-func TestLocalThumbnailRenameFollowsMainFinalNameAfterDupCheck(t *testing.T) {
+// 核心机制：缩略图策略读主图 fd 的名字（LocalFileStorage.Upload 的缩略图 fd 就是这么构造的）。
+// 回调在主图 fd 构造完成之后才执行，因此取到的是主图最终采用的名字，
+// 保证 LocalFileStorage.Delete 的「主图基名 + -thumbnail」推导始终成立。
+func TestLocalThumbnailFollowsMainName(t *testing.T) {
 	opts := []fdOption{
 		withOriginalName("photo.png"),
 		withBasePath("/data/airpress"),
 		withSubPath("upload/img/2026/10"),
 	}
-	// 主图：策略返回固定名 + shouldRename 命中 → 最终名被追加时间戳，形如 {name}-{ms}
 	main, err := newLocalFileDescriptor(append(opts,
 		withRename(func() (string, error) { return "24u24dfads", nil }),
-		withShouldRename(func(string) (bool, error) { return true, nil }),
 	)...)
 	if err != nil {
 		t.Fatalf("newLocalFileDescriptor() main err = %v", err)
 	}
-	if !strings.HasPrefix(main.getFileName(), "24u24dfads-") {
-		t.Fatalf("前置条件不成立：主图应命中防重并追加时间戳, getFileName() = %q", main.getFileName())
+	if got := main.getFileName(); got != "24u24dfads" {
+		t.Fatalf("前置条件不成立：主图名应为策略返回值, getFileName() = %q", got)
 	}
-	// 缩略图：策略读主图最终名；自身恒不查重（名派生自主图，无需再防重）
 	thumb, err := newLocalFileDescriptor(append(opts,
 		withRename(func() (string, error) { return main.getFileName(), nil }),
-		withShouldRename(func(string) (bool, error) { return false, nil }),
 		withSuffix("-thumbnail"),
 	)...)
 	if err != nil {
@@ -152,7 +138,7 @@ func TestLocalThumbnailRenameFollowsMainFinalNameAfterDupCheck(t *testing.T) {
 	}
 	want := strings.TrimSuffix(main.getRelativePath(), ".png") + "-thumbnail.png"
 	if got := thumb.getRelativePath(); got != want {
-		t.Errorf("缩略图 getRelativePath() = %q, want 跟随主图最终名 %q", got, want)
+		t.Errorf("缩略图 getRelativePath() = %q, want 跟随主图名 %q", got, want)
 	}
 }
 

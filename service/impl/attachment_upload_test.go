@@ -196,6 +196,31 @@ func TestUploadImagePersistsThumbPathDistinctFromPath(t *testing.T) {
 	if rec.ThumbPath == rec.Path {
 		t.Errorf("thumb_path 与 path 相同(%q),thumb_path 入库取错字段的缺陷(4e348dc)回归", rec.ThumbPath)
 	}
+
+	// 逐列守住 DTO→entity 的真实映射（attachment.go 的建实体段）：
+	// 漏写、错位、Width/Height 互换、文件名取成随机名等回归都要在这里变红。
+	// 原先这几列只由存储层测试手抄的映射覆盖，搬到这里后测的是真实代码。
+	if rec.Name != "a" {
+		t.Errorf("name = %q, want %q", rec.Name, "a")
+	}
+	if rec.FileKey != wantPath {
+		t.Errorf("file_key = %q, want %q", rec.FileKey, wantPath)
+	}
+	if rec.Suffix != "png" {
+		t.Errorf("suffix = %q, want %q", rec.Suffix, "png")
+	}
+	if rec.MediaType != "image/png" {
+		t.Errorf("media_type = %q, want %q", rec.MediaType, "image/png")
+	}
+	if rec.Size != 123 {
+		t.Errorf("size = %d, want 123", rec.Size)
+	}
+	if rec.Width != 2 || rec.Height != 2 {
+		t.Errorf("width/height = %d/%d, want 2/2", rec.Width, rec.Height)
+	}
+	if rec.Type != consts.AttachmentTypeLocal {
+		t.Errorf("type = %v, want %v", rec.Type, consts.AttachmentTypeLocal)
+	}
 }
 
 // 场景二:非图片附件上传后,库里 thumb_path 为空串——既不是主图路径,也不是任何 URL。

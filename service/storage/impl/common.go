@@ -1,7 +1,6 @@
 package filestorageimpl
 
 import (
-	"context"
 	"image"
 	"io"
 	"math"
@@ -9,23 +8,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/hipoint-airpress/airpress/consts"
-	"github.com/hipoint-airpress/airpress/dal"
 	"github.com/hipoint-airpress/airpress/model/dto"
 	"github.com/hipoint-airpress/airpress/util"
 	"github.com/hipoint-airpress/airpress/util/xerr"
 )
-
-func commonRenamePredicateFunc(ctx context.Context, attachmentType consts.AttachmentType) func(relativePath string) (bool, error) {
-	return func(relativePath string) (bool, error) {
-		attachmentDAL := dal.GetQueryByCtx(ctx).Attachment
-		count, err := attachmentDAL.WithContext(ctx).Where(attachmentDAL.Type.Eq(attachmentType), attachmentDAL.FileKey.Eq(relativePath)).Count()
-		if err != nil {
-			return false, err
-		}
-		return count > 0, nil
-	}
-}
 
 func getFileContentType(file multipart.File) (string, error) {
 	_, err := file.Seek(0, io.SeekStart)

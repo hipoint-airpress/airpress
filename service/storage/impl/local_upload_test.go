@@ -3,7 +3,6 @@ package filestorageimpl
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"image"
 	"image/png"
 	"mime"
@@ -12,61 +11,23 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync/atomic"
 	"testing"
 
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-
 	"github.com/hipoint-airpress/airpress/config"
-	"github.com/hipoint-airpress/airpress/consts"
-	"github.com/hipoint-airpress/airpress/dal"
 	"github.com/hipoint-airpress/airpress/model/dto"
-	"github.com/hipoint-airpress/airpress/model/entity"
 )
 
-// 本文件端到端验证 LocalFileStorage.Upload：真实 multipart、真实 gorm+内存 SQLite、真实落盘。
-// 注意 Upload 自身只通过 commonRenamePredicateFunc 读库查重；附件行写库发生在服务层
-// attachmentServiceImpl.Upload，这里按服务层同样的转换补一次 Create，再读回比对。
-// 禁止 t.Parallel()：dal 包级全局 Q 是共享状态。
+// 本文件端到端验证 LocalFileStorage.Upload：真实 multipart、真实落盘。
+// 驱动层不碰数据库（冲突防护在存储层：O_CREATE|O_EXCL，见 local.go 的 Upload），
+// 因此这里不需要 SQLite；DTO→entity 各列的入库正确性由
+// service/impl/attachment_upload_test.go 用真实 gorm 覆盖。
 
 // uploadPathPattern 钉住落盘契约：upload/{类型}/{年}/{月}/{10 位 base62 随机名}.png
 var uploadPathPattern = regexp.MustCompile(`^upload/img/[0-9]{4}/[0-9]{2}/[0-9A-Za-z]{10}\.png$`)
 
-// memoryDSNSeq 给每个测试一个独立的共享内存库名，避免先后两个测试间残留数据
-var memoryDSNSeq int64
-
-// setupLocalUpload 用内存 SQLite 初始化全局 dal.Q，并返回以 t.TempDir 为 WorkDir 的本地存储。
-// Q 的旧值与连接关闭都在 t.Cleanup 里恢复，保证不污染同包其它测试、也不使用仓库的 airpress.db / upload/。
+// setupLocalUpload 返回以 t.TempDir 为 WorkDir 的本地存储，不触碰仓库的 airpress.db 与 upload/。
 func setupLocalUpload(t *testing.T) (*LocalFileStorage, string) {
 	t.Helper()
-
-	dsn := fmt.Sprintf("file:airpress_local_upload_%d?mode=memory&cache=shared",
-		atomic.AddInt64(&memoryDSNSeq, 1))
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("get sql.DB: %v", err)
-	}
-	// :memory: 库每连接一份，连接数压到 1 配合共享缓存 DSN，保证所有查询命中同一个库
-	sqlDB.SetMaxOpenConns(1)
-	// 只迁移本测试需要的表；不碰仓库的 airpress.db，也不跑全量 dbMigrate
-	if err := db.AutoMigrate(&entity.Attachment{}); err != nil {
-		t.Fatalf("auto migrate attachment: %v", err)
-	}
-
-	// Upload 内 GetQueryByCtx(ctx) 在 ctx 无事务时回落到包级全局 Q，先存旧值、测试结束恢复。
-	// 注意：*dal.Q = prev 这种恢复方式依赖 SetDefault 的实现形态是原地改写 *Q（dal/gen.go:38）；
-	// 若将来 codegen 改成替换 dal.Q 指针本身，这里的恢复会静默失效，需要同步改为保存/恢复指针。
-	prev := *dal.Q
-	t.Cleanup(func() {
-		*dal.Q = prev
-		_ = sqlDB.Close()
-	})
-	dal.SetDefault(db)
 
 	cfg := &config.Config{}
 	workDir := t.TempDir()
@@ -116,35 +77,11 @@ func pngFileHeader(t *testing.T, filename string) *multipart.FileHeader {
 	return fhs[0]
 }
 
-// saveAttachment 复刻服务层的 DTO→entity 转换写一行附件，用于验证真实数据库写入路径。
-// 与服务层的差异只在 ThumbPath 取 DTO.ThumbPath（服务层写法见其源码，疑似 bug，本测试不照搬）。
-func saveAttachment(t *testing.T, ctx context.Context, att *dto.AttachmentDTO) {
-	t.Helper()
-
-	sep := string(os.PathSeparator)
-	rec := &entity.Attachment{
-		FileKey:   att.FileKey,
-		Height:    att.Height,
-		MediaType: att.MediaType,
-		Name:      att.Name,
-		Path:      strings.ReplaceAll(att.Path, sep, "/"),
-		Size:      att.Size,
-		Suffix:    att.Suffix,
-		ThumbPath: strings.ReplaceAll(att.ThumbPath, sep, "/"),
-		Type:      att.AttachmentType,
-		Width:     att.Width,
-	}
-	if err := dal.Q.Attachment.WithContext(ctx).Create(rec); err != nil {
-		t.Fatalf("create attachment: %v", err)
-	}
-}
-
-// 场景一：中文命名 PNG 上传成功并正确落盘、正确写库
+// 场景一：中文命名 PNG 上传成功并正确落盘，随机名与主图/缩略图配对关系成立
 func TestLocalUploadChinesePngSavesAndPersists(t *testing.T) {
 	storage, workDir := setupLocalUpload(t)
-	ctx := context.Background()
 
-	att, err := storage.Upload(ctx, pngFileHeader(t, "微信截图.png"))
+	att, err := storage.Upload(context.Background(), pngFileHeader(t, "微信截图.png"))
 	if err != nil {
 		t.Fatalf("Upload: %v", err)
 	}
@@ -164,8 +101,14 @@ func TestLocalUploadChinesePngSavesAndPersists(t *testing.T) {
 	if !strings.Contains(att.MediaType, "image/png") {
 		t.Errorf("MediaType = %q, want 含 image/png", att.MediaType)
 	}
+	if att.Suffix != "png" {
+		t.Errorf("Suffix = %q, want %q", att.Suffix, "png")
+	}
 	if att.Width != 2 || att.Height != 2 {
 		t.Errorf("Width/Height = %d/%d, want 2/2", att.Width, att.Height)
+	}
+	if att.Size == 0 {
+		t.Errorf("Size = %d, want 非零（真实 PNG 字节数）", att.Size)
 	}
 
 	wantThumb := strings.TrimSuffix(att.Path, ".png") + "-thumbnail.png"
@@ -185,44 +128,12 @@ func TestLocalUploadChinesePngSavesAndPersists(t *testing.T) {
 			t.Errorf("落盘文件为空 %s", full)
 		}
 	}
-
-	// 真实数据库写入后读回比对：逐列覆盖 saveAttachment 复刻的服务层映射，
-	// Width/Height 互换、漏写 Suffix/Size/Type/MediaType、Path/ThumbPath 斜杠规范化写反都必须在这里变红
-	saveAttachment(t, ctx, att)
-	wantPath := filepath.ToSlash(att.Path)
-	wantThumbPath := filepath.ToSlash(att.ThumbPath)
-	rec, err := dal.Q.Attachment.WithContext(ctx).
-		Where(dal.Q.Attachment.Path.Eq(wantPath)).First()
-	if err != nil {
-		t.Fatalf("读回附件失败: %v", err)
-	}
-	if rec.Name != att.Name || rec.Path != wantPath || rec.FileKey != att.FileKey {
-		t.Errorf("库内行与 DTO 不一致: name=%q path=%q file_key=%q, want name=%q path=%q file_key=%q",
-			rec.Name, rec.Path, rec.FileKey, att.Name, wantPath, att.FileKey)
-	}
-	if rec.ThumbPath != wantThumbPath {
-		t.Errorf("thumb_path = %q, want 斜杠化后的 ThumbPath %q", rec.ThumbPath, wantThumbPath)
-	}
-	if rec.Suffix != "png" {
-		t.Errorf("suffix = %q, want %q", rec.Suffix, "png")
-	}
-	if rec.Size != att.Size {
-		t.Errorf("size = %d, want %d", rec.Size, att.Size)
-	}
-	if rec.Width != att.Width || rec.Height != att.Height || rec.Width != 2 || rec.Height != 2 {
-		t.Errorf("width/height = %d/%d, want %d/%d 且各自为 2", rec.Width, rec.Height, att.Width, att.Height)
-	}
-	if rec.Type != consts.AttachmentTypeLocal {
-		t.Errorf("type = %v, want %v", rec.Type, consts.AttachmentTypeLocal)
-	}
-	if rec.MediaType != att.MediaType {
-		t.Errorf("media_type = %q, want %q", rec.MediaType, att.MediaType)
-	}
 }
 
-// 场景二：同名二次上传得到不同随机名，两条记录共存。
-// 注意：本文件未覆盖「随机名撞库→追加时间戳」分支——10 位 base62 撞库概率≈0，端到端无法稳定复现；
-// 该分支由 file_descriptor_test.go 的 TestRenameStrategyRunsBeforeDupCheck 在 fd 层钉住。
+// 场景二：同名二次上传得到不同随机名，两次都保留原始基名。
+// 注意：本文件不覆盖「同名冲突」分支——10 位 base62 随机名撞库概率≈0，端到端无法稳定复现；
+// 冲突防护位于存储层条件写（local.go 的 O_CREATE|O_EXCL），需要真实预占路径才能验证，
+// 与云驱动的条件写同属已记录的测试债。
 func TestLocalUploadSameNameTwiceGetsDistinctNames(t *testing.T) {
 	storage, _ := setupLocalUpload(t)
 	ctx := context.Background()
@@ -231,14 +142,11 @@ func TestLocalUploadSameNameTwiceGetsDistinctNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("第一次 Upload: %v", err)
 	}
-	saveAttachment(t, ctx, first)
-
 	// Upload 会消费 fileHeader，第二次必须重新构造一份
 	second, err := storage.Upload(ctx, pngFileHeader(t, "微信截图.png"))
 	if err != nil {
 		t.Fatalf("第二次 Upload: %v", err)
 	}
-	saveAttachment(t, ctx, second)
 
 	if first.Path == second.Path {
 		t.Errorf("两次上传路径相同 %q, 随机命名未生效", first.Path)
@@ -246,35 +154,6 @@ func TestLocalUploadSameNameTwiceGetsDistinctNames(t *testing.T) {
 	for _, att := range []*dto.AttachmentDTO{first, second} {
 		if att.Name != "微信截图" {
 			t.Errorf("Name = %q, want 两次都保留原始基名 %q", att.Name, "微信截图")
-		}
-	}
-
-	count, err := dal.Q.Attachment.WithContext(ctx).Count()
-	if err != nil {
-		t.Fatalf("count attachments: %v", err)
-	}
-	if count != 2 {
-		t.Errorf("附件表行数 = %d, want 2（两条记录共存）", count)
-	}
-
-	// count==2 只证明行数；把两行一起查回，验证每行内容各归其主而非彼此错乱
-	firstPath, secondPath := filepath.ToSlash(first.Path), filepath.ToSlash(second.Path)
-	recs, err := dal.Q.Attachment.WithContext(ctx).
-		Where(dal.Q.Attachment.Path.In(firstPath, secondPath)).Find()
-	if err != nil {
-		t.Fatalf("查回两条附件失败: %v", err)
-	}
-	if len(recs) != 2 {
-		t.Fatalf("按两次 Path 查回 %d 行, want 2", len(recs))
-	}
-	// 两行 FileKey 的集合应与两次上传的 Path 集合一致（first/second 的 Path 已断言互不相同）
-	wantFileKeys := map[string]bool{firstPath: true, secondPath: true}
-	for _, r := range recs {
-		if !wantFileKeys[r.FileKey] {
-			t.Errorf("库内 file_key = %q, 不属于两次上传的 Path 集合 {%q, %q}", r.FileKey, firstPath, secondPath)
-		}
-		if r.Name != "微信截图" {
-			t.Errorf("库内 name = %q, want 两行都保留原始基名 %q", r.Name, "微信截图")
 		}
 	}
 }

@@ -2,8 +2,6 @@ package filestorageimpl
 
 import (
 	"path/filepath"
-	"strconv"
-	"time"
 )
 
 type fileDescriptor interface {
@@ -13,11 +11,8 @@ type fileDescriptor interface {
 	getFileName() string
 	setFileName(string)
 	getExtensionName() string
-	getShouldRename() shouldRename
 	getRename() renameFunc
 }
-
-type shouldRename = func(relativePath string) (bool, error)
 
 // renameFunc 是改名策略：返回要使用的文件名主体（不含扩展名）。
 // 通过 withRename/withRenameURLOption 指定；不指定时沿用原始文件名基名。
@@ -31,7 +26,6 @@ type localFileDescriptor struct {
 	BasePath        string
 	SubPath         string
 	AutomaticRename bool
-	ShouldRename    shouldRename
 	Rename          renameFunc
 	Suffix          string
 }
@@ -64,31 +58,21 @@ func newLocalFileDescriptor(opts ...fdOption) (fileDescriptor, error) {
 	return fd, nil
 }
 
-// rename 依次执行两段逻辑：
-//  1. 调用方用 withRename 指定的改名策略（本功能用它生成随机名），未指定则沿用原始文件名基名；
-//  2. 用 shouldRename 对「改名之后」的相对路径做二次查重，判定重复则追加毫秒时间戳防重名。
+// rename 执行调用方用 withRename 指定的改名策略生成文件名主体（本功能用它生成随机名）；
+// 未指定策略时沿用原始文件名基名。
 //
-// 两个钩子都不传时行为与改造前一致。
+// 冲突不在此处检测：唯一在写入前生效的防护是存储层的条件写
+// （阿里云 oss.ForbidOverWrite、MinIO If-None-Match、本地 O_CREATE|O_EXCL，见各驱动的 Upload）。
 func rename(f fileDescriptor) error {
-	if fn := f.getRename(); fn != nil {
-		name, err := fn()
-		if err != nil {
-			return err
-		}
-		f.setFileName(name)
-	}
-	if f.getShouldRename() == nil {
+	fn := f.getRename()
+	if fn == nil {
 		return nil
 	}
-	should, err := f.getShouldRename()(f.getRelativePath())
+	name, err := fn()
 	if err != nil {
 		return err
 	}
-	if !should {
-		return nil
-	}
-	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-	f.setFileName(f.getFileName() + "-" + timestamp)
+	f.setFileName(name)
 	return nil
 }
 
@@ -123,10 +107,6 @@ func (f *localFileDescriptor) getFileName() string {
 	return f.Name
 }
 
-func (f *localFileDescriptor) getShouldRename() shouldRename {
-	return f.ShouldRename
-}
-
 func (f *localFileDescriptor) getRename() renameFunc {
 	return f.Rename
 }
@@ -151,13 +131,7 @@ func withSubPath(subPath string) fdOption {
 	}
 }
 
-func withShouldRename(fn func(relativePath string) (bool, error)) fdOption {
-	return func(f *localFileDescriptor) {
-		f.ShouldRename = fn
-	}
-}
-
-// withRename 指定改名策略；策略产出的路径仍会经 shouldRename 二次查重
+// withRename 指定改名策略；不指定时沿用原始文件名的基名
 func withRename(fn renameFunc) fdOption {
 	return func(f *localFileDescriptor) {
 		f.Rename = fn

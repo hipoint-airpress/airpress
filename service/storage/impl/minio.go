@@ -46,7 +46,6 @@ func (m *MinIO) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (*
 	fd, err := newURLFileDescriptor(
 		withBaseURL(minioClientInstance.Protocol+minioClientInstance.EndPoint+"/"+minioClientInstance.BucketName),
 		withSubURLPath(cloudSubPath(minioClientInstance.Source, time.Now(), fileHeader.Filename)),
-		withShouldRenameURLOption(commonRenamePredicateFunc(ctx, consts.AttachmentTypeMinIO)),
 		withOriginalNameURLOption(fileHeader.Filename),
 		withRenameURLOption(storageName),
 	)

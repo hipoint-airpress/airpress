@@ -62,7 +62,6 @@ func (a *Aliyun) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (
 	fd, err := newURLFileDescriptor(
 		withBaseURL(basePath),
 		withSubURLPath(cloudSubPath(aliyunClientInstance.Source, time.Now(), fileHeader.Filename)),
-		withShouldRenameURLOption(commonRenamePredicateFunc(ctx, consts.AttachmentTypeAliOSS)),
 		withOriginalNameURLOption(fileHeader.Filename),
 		withRenameURLOption(storageName),
 	)
