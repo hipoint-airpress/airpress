@@ -72,6 +72,8 @@ func (a *Aliyun) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (
 		fd.getRelativePath(),
 		file,
 		oss.ContentDisposition(contentDisposition(fileHeader.Filename)),
+		// 系统语义为「不允许覆盖」：同名对象已存在时由 OSS 直接拒绝，而不是静默替换旧附件内容
+		oss.ForbidOverWrite(true),
 	)
 	if err != nil {
 		return nil, xerr.WithMsg(err, "upload to aliyun oss error: "+err.Error()).WithStatus(xerr.StatusInternalServerError)

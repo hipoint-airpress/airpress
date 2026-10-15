@@ -71,7 +71,8 @@ func (l *LocalFileStorage) Upload(ctx context.Context, fileHeader *multipart.Fil
 	}
 	defer func() { _ = srcFile.Close() }()
 
-	out, err := os.Create(fd.getFullPath())
+	// O_EXCL：路径已存在则失败，避免静默截断覆盖既有附件（os.Create 是 O_CREATE|O_TRUNC，永不返回 ErrExist）
+	out, err := os.OpenFile(fd.getFullPath(), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if os.IsExist(err) {
 		return nil, xerr.WithMsg(err, "The file already exists!")
 	} else if err != nil {
