@@ -121,6 +121,41 @@ func TestLocalRenameStrategySharedByThumbnail(t *testing.T) {
 	}
 }
 
+// 核心机制：缩略图策略读主图 fd 的最终名（LocalFileStorage.Upload 缩略图 fd 就是这么构造的）。
+// 主图命中二次防重被追加毫秒时间戳后，缩略图名自动跟随，
+// 保证 LocalFileStorage.Delete 的「主图基名 + -thumbnail」推导在防重触发时同样成立。
+func TestLocalThumbnailRenameFollowsMainFinalNameAfterDupCheck(t *testing.T) {
+	opts := []fdOption{
+		withOriginalName("photo.png"),
+		withBasePath("/data/airpress"),
+		withSubPath("upload/img/2026/10"),
+	}
+	// 主图：策略返回固定名 + shouldRename 命中 → 最终名被追加时间戳，形如 {name}-{ms}
+	main, err := newLocalFileDescriptor(append(opts,
+		withRename(func() (string, error) { return "24u24dfads", nil }),
+		withShouldRename(func(string) (bool, error) { return true, nil }),
+	)...)
+	if err != nil {
+		t.Fatalf("newLocalFileDescriptor() main err = %v", err)
+	}
+	if !strings.HasPrefix(main.getFileName(), "24u24dfads-") {
+		t.Fatalf("前置条件不成立：主图应命中防重并追加时间戳, getFileName() = %q", main.getFileName())
+	}
+	// 缩略图：策略读主图最终名；自身恒不查重（名派生自主图，无需再防重）
+	thumb, err := newLocalFileDescriptor(append(opts,
+		withRename(func() (string, error) { return main.getFileName(), nil }),
+		withShouldRename(func(string) (bool, error) { return false, nil }),
+		withSuffix("-thumbnail"),
+	)...)
+	if err != nil {
+		t.Fatalf("newLocalFileDescriptor() thumb err = %v", err)
+	}
+	want := strings.TrimSuffix(main.getRelativePath(), ".png") + "-thumbnail.png"
+	if got := thumb.getRelativePath(); got != want {
+		t.Errorf("缩略图 getRelativePath() = %q, want 跟随主图最终名 %q", got, want)
+	}
+}
+
 // 本地 fd 不传策略时的默认行为不受影响
 func TestLocalDefaultBehaviorWithoutRename(t *testing.T) {
 	fd, err := newLocalFileDescriptor(

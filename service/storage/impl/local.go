@@ -43,19 +43,13 @@ func NewLocalFileStorage(config *config.Config, optionService service.OptionServ
 
 func (l *LocalFileStorage) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (*dto.AttachmentDTO, error) {
 	now := time.Now()
-	name, err := storageName()
-	if err != nil {
-		return nil, xerr.WithMsg(err, "generate storage name error")
-	}
-	// 主图与缩略图必须共用同一个随机名，故用返回固定值的策略而非 storageName 本身
-	fixedName := func() (string, error) { return name, nil }
 	subPath := l.getUploadPath(now, fileHeader.Filename)
 
 	fd, err := newLocalFileDescriptor(
 		withOriginalName(fileHeader.Filename),
 		withBasePath(l.Config.AirPress.WorkDir),
 		withSubPath(subPath),
-		withRename(fixedName),
+		withRename(storageName),
 		withShouldRename(commonRenamePredicateFunc(ctx, consts.AttachmentTypeLocal)),
 	)
 	if err != nil {
@@ -110,13 +104,15 @@ func (l *LocalFileStorage) Upload(ctx context.Context, fileHeader *multipart.Fil
 		if fd.getExtensionName() == "webp" {
 			return fd.getRelativePath(), nil
 		}
-		// 必须与主图复用同一 fixedName/subPath：Delete 按主图基名拼 "-thumbnail"（见本文件 Delete），
-		// 另起一次随机名会留下删不掉的孤儿缩略图。
+		// 缩略图名派生自主图 fd 的最终名：回调发生在 handleImageMeta 内、主图 fd 构造完成之后，
+		// 此时 getFileName() 已含 shouldRename 二次防重追加的毫秒时间戳，主图加后缀缩略图自动跟随，
+		// 保证 Delete 按「主图基名 + -thumbnail」推导（见本文件 Delete）始终命中；
+		// 不要退回成独立生成随机名。subPath 复用主图那份，保证同目录。
 		thumbnailFd, err := newLocalFileDescriptor(
 			withOriginalName(fileHeader.Filename),
 			withBasePath(l.Config.AirPress.WorkDir),
 			withSubPath(subPath),
-			withRename(fixedName),
+			withRename(func() (string, error) { return fd.getFileName(), nil }),
 			withShouldRename(func(r string) (bool, error) {
 				return false, nil
 			}),
