@@ -10,6 +10,7 @@ type fileDescriptor interface {
 	getRelativePath() string
 	getFileName() string
 	setFileName(string)
+	getOriginalName() string
 	getExtensionName() string
 	getRename() renameFunc
 }
@@ -58,15 +59,21 @@ func newLocalFileDescriptor(opts ...fdOption) (fileDescriptor, error) {
 	return fd, nil
 }
 
-// rename 执行改名策略生成文件名主体：优先用调用方经 withRename 指定的策略，
-// 未指定时默认用 randomFilename 生成随机名。
+// rename 执行改名策略生成文件名主体：优先用调用方经 withRename 指定的策略。
+// 未指定时按扩展名分流：文档类使用清洗后的原始文件名，其余使用 randomFilename 生成随机名。
 //
 // 冲突不在此处检测：唯一在写入前生效的防护是存储层的条件写
 // （阿里云 oss.ForbidOverWrite、MinIO If-None-Match、本地 O_CREATE|O_EXCL，见各驱动的 Upload）。
 func rename(f fileDescriptor) error {
 	fn := f.getRename()
 	if fn == nil {
-		fn = randomFilename
+		if categoryOf(f.getExtensionName()) == "doc" {
+			fn = func() (string, error) {
+				return docStorageBaseName(f.getOriginalName()), nil
+			}
+		} else {
+			fn = randomFilename
+		}
 	}
 	name, err := fn()
 	if err != nil {
@@ -105,6 +112,10 @@ func (f *localFileDescriptor) getExtensionName() string {
 
 func (f *localFileDescriptor) getFileName() string {
 	return f.Name
+}
+
+func (f *localFileDescriptor) getOriginalName() string {
+	return f.OriginalName
 }
 
 func (f *localFileDescriptor) getRename() renameFunc {

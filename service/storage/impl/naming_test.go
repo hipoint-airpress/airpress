@@ -158,3 +158,29 @@ func TestContentDisposition(t *testing.T) {
 		}
 	}
 }
+
+func TestDocStorageBaseName(t *testing.T) {
+	cases := []struct {
+		name     string
+		filename string
+		want     string
+	}{
+		{"中文与字母数字保留", "年度报告2026.docx", "年度报告2026"},
+		{"去 Windows 上传路径", `C:\fakepath\报告.pdf`, "报告"},
+		{"去 POSIX 上传路径", "dir/sub/报告.pdf", "报告"},
+		{"危险字符替换为下划线", `a:b*c?d"e<f>g|h#i%j.pdf`, "a_b_c_d_e_f_g_h_i_j"},
+		{"普通空格与制表符换行删除", "a b\tc\nd.pdf", "abcd"},
+		{"不换行空格与全角空格删除", "a\u00A0b\u3000c.pdf", "abc"},
+		{"零宽空格与 BOM 删除", "a\u200Bb\uFEFFc.pdf", "abc"},
+		{"去首尾点", "...报告...pdf", "报告"},
+		{"清洗后为空兜底", "....pdf", "attachment"},
+		{"超长中文按字节截断不切坏汉字", strings.Repeat("名", 100) + ".pdf", strings.Repeat("名", 66)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := docStorageBaseName(c.filename); got != c.want {
+				t.Errorf("docStorageBaseName(%q) = %q, want %q", c.filename, got, c.want)
+			}
+		})
+	}
+}

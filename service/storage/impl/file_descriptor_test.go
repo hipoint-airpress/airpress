@@ -177,3 +177,52 @@ func TestLocalDefaultRenameIsRandom(t *testing.T) {
 		t.Errorf("getExtensionName() = %q, want %q", got, "png")
 	}
 }
+
+// 文档类附件默认使用清洗后的原始文件名做存储基名
+func TestDocDefaultRenameUsesOriginalName(t *testing.T) {
+	cases := []struct {
+		filename string
+		want     string
+	}{
+		{"年度报告 2026.docx", "年度报告2026"},
+		{"季度报表.xlsx", "季度报表"},
+		{"说明.txt", "说明"},
+	}
+	for _, c := range cases {
+		t.Run(c.filename, func(t *testing.T) {
+			fd, err := newLocalFileDescriptor(
+				withOriginalName(c.filename),
+				withBasePath("/data/airpress"),
+				withSubPath("upload/doc/2026/10"),
+			)
+			if err != nil {
+				t.Fatalf("newLocalFileDescriptor() err = %v", err)
+			}
+			if got := fd.getFileName(); got != c.want {
+				t.Errorf("getFileName() = %q, want %q", got, c.want)
+			}
+			wantPath := "upload/doc/2026/10/" + c.want + "." + fd.getExtensionName()
+			if got := fd.getRelativePath(); got != wantPath {
+				t.Errorf("getRelativePath() = %q, want %q", got, wantPath)
+			}
+		})
+	}
+}
+
+// 云存储 fd 同样对文档类使用原名
+func TestDocURLDefaultRenameUsesOriginalName(t *testing.T) {
+	fd, err := newURLFileDescriptor(
+		withBaseURL("https://example.com"),
+		withSubURLPath("doc/2026/10"),
+		withOriginalNameURLOption("季度 报告.pdf"),
+	)
+	if err != nil {
+		t.Fatalf("newURLFileDescriptor() err = %v", err)
+	}
+	if got := fd.getFileName(); got != "季度报告" {
+		t.Errorf("getFileName() = %q, want %q", got, "季度报告")
+	}
+	if got := fd.getRelativePath(); got != "doc/2026/10/季度报告.pdf" {
+		t.Errorf("getRelativePath() = %q, want %q", got, "doc/2026/10/季度报告.pdf")
+	}
+}

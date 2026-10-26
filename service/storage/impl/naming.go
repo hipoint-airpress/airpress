@@ -5,6 +5,8 @@ import (
 	"path"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/aidarkhanov/nanoid/v2"
 )
@@ -17,10 +19,53 @@ const (
 )
 
 // randomFilename 生成长度为 nameSize 的 base62 随机文件名主体（不含扩展名）。
-// 它是文件描述符未显式指定改名策略时的默认改名函数，也可用 withRename/withRenameURLOption
+// 它是非文档类附件未显式指定改名策略时的默认改名函数，也可用 withRename/withRenameURLOption
 // 显式传入（签名与 renameFunc 相同）。
 func randomFilename() (string, error) {
 	return nanoid.GenerateString(nameAlphabet, nameSize)
+}
+
+const (
+	// docStorageNameMaxBytes 是文档类附件存储基名的 UTF-8 字节上限。
+	// ext4/NTFS 单文件名上限 255 字节，留出扩展名与截断的余量。
+	docStorageNameMaxBytes = 200
+	// docStorageNameFallback 是清洗后为空时的兜底基名
+	docStorageNameFallback = "attachment"
+)
+
+// storageNameReplacer 替换会破坏 URL 或跨平台文件系统的字符：
+// # ? % 会被 GetFilePath 的 url.JoinPath + url.PathUnescape 误解析，
+// 其余是 Windows 保留字符。
+var storageNameReplacer = strings.NewReplacer(
+	"/", "_", "\\", "_", ":", "_", "*", "_", "?", "_",
+	"\"", "_", "<", "_", ">", "_", "|", "_", "#", "_", "%", "_",
+)
+
+// docStorageBaseName 把原始文件名转成文档类附件的存储基名：
+// 去路径、删空白与控制字符、替换危险字符、按字节截断、去首尾点，空结果兜底为 attachment。
+// 空白包括 unicode.IsSpace 覆盖的全部字符（空格/制表/换行/NBSP/全角空格），外加零宽空格与 BOM。
+func docStorageBaseName(originalName string) string {
+	base, _ := splitBaseName(originalName)
+
+	var b strings.Builder
+	for _, r := range base {
+		if unicode.IsSpace(r) || r == 0x200B || r == 0xFEFF || r < 0x20 || r == 0x7F {
+			continue
+		}
+		b.WriteRune(r)
+	}
+
+	name := strings.Trim(storageNameReplacer.Replace(b.String()), ".")
+	if len(name) > docStorageNameMaxBytes {
+		cut := docStorageNameMaxBytes
+		// 回退到字符起始字节，避免把多字节汉字切成半个
+		for cut > 0 && !utf8.RuneStart(name[cut]) {
+			cut--
+		}
+		name = name[:cut]
+	}
+	name = strings.TrimRight(name, ".")
+	return defaultIfEmpty(name, docStorageNameFallback)
 }
 
 // categoryFile 是未知扩展名的兜底类型目录
