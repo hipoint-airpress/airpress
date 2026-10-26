@@ -22,12 +22,16 @@ import (
 type userServiceImpl struct {
 	TwoFactorMFAService service.TwoFactorTOTPMFAService
 	Event               event.Bus
+	OptionService       service.OptionService
+	RecoveryCodeService service.RecoveryCodeService
 }
 
-func NewUserService(twoFactorMFAService service.TwoFactorTOTPMFAService, event event.Bus) service.UserService {
+func NewUserService(twoFactorMFAService service.TwoFactorTOTPMFAService, event event.Bus, optionService service.OptionService, recoveryCodeService service.RecoveryCodeService) service.UserService {
 	return &userServiceImpl{
 		TwoFactorMFAService: twoFactorMFAService,
 		Event:               event,
+		OptionService:       optionService,
+		RecoveryCodeService: recoveryCodeService,
 	}
 }
 
@@ -96,6 +100,13 @@ func (u *userServiceImpl) UpdateMFA(ctx context.Context, mfaKey string, mfaType 
 			return xerr.WithStatus(nil, xerr.StatusBadRequest).WithMsg("Invalid Validation Code")
 		}
 	case consts.MFANone:
+		policy, err := u.OptionService.GetMFAPolicy(ctx)
+		if err != nil {
+			return err
+		}
+		if policy.Requires(user.Role) {
+			return xerr.WithStatus(nil, xerr.StatusBadRequest).WithMsg("当前安全策略要求开启两步验证，无法关闭")
+		}
 		ok := u.TwoFactorMFAService.ValidateTFACode(user.MfaKey, mfaCode)
 		if !ok {
 			return xerr.WithStatus(nil, xerr.StatusBadRequest).WithMsg("Invalid Validation Code")
@@ -115,7 +126,17 @@ func (u *userServiceImpl) UpdateMFA(ctx context.Context, mfaKey string, mfaType 
 	if updateResult.RowsAffected != 1 {
 		return xerr.DB.New("").WithMsg("update mfaKey error").WithStatus(xerr.StatusInternalServerError)
 	}
+	// 开启、更换或关闭 TOTP 后，旧的恢复码都必须失效。
+	if err := u.RecoveryCodeService.DeleteAll(ctx, user.ID); err != nil {
+		return err
+	}
 	u.Event.Publish(ctx, &event.UserUpdateEvent{})
+	u.Event.Publish(ctx, &event.LogEvent{
+		LogKey:    user.Username,
+		LogType:   consts.LogTypeMfaUpdated,
+		Content:   user.Nickname,
+		IPAddress: util.GetClientIP(ctx),
+	})
 	return nil
 }
 
@@ -127,6 +148,8 @@ func (u *userServiceImpl) ConvertToDTO(ctx context.Context, user *entity.User) *
 		Email:       user.Email,
 		Avatar:      user.Avatar,
 		Description: user.Description,
+		Role:        user.Role,
+		Disabled:    user.Disabled,
 		MFAType:     user.MfaType,
 		CreateTime:  user.CreateTime.UnixMilli(),
 	}
@@ -183,6 +206,10 @@ func (u *userServiceImpl) CreateByParam(ctx context.Context, userParam param.Use
 	if len(userParam.Password) < 8 || len(userParam.Password) > 100 {
 		return nil, xerr.BadParam.Wrap(nil).WithMsg("password length err")
 	}
+	role := userParam.Role
+	if !role.IsValid() {
+		role = consts.UserRoleAuthor
+	}
 	user := &entity.User{
 		Description: userParam.Description,
 		Email:       userParam.Email,
@@ -192,6 +219,7 @@ func (u *userServiceImpl) CreateByParam(ctx context.Context, userParam param.Use
 		MfaKey:      "",
 		MfaType:     consts.MFANone,
 		Avatar:      userParam.Avatar,
+		Role:        role,
 	}
 	userDAL := dal.GetQueryByCtx(ctx).User
 	err := userDAL.WithContext(ctx).Create(user)

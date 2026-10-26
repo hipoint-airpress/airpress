@@ -48,4 +48,9 @@ var (
 		KeyValue:     "jwt_secret",
 		Kind:         reflect.String,
 	}
+	MFAPolicy = Property{
+		DefaultValue: "NONE",
+		KeyValue:     "mfa_policy",
+		Kind:         reflect.String,
+	}
 )

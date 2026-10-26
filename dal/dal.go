@@ -95,9 +95,12 @@ func dbMigrate() {
 	})
 	err := db.AutoMigrate(&entity.Attachment{}, &entity.Category{}, &entity.Comment{}, &entity.CommentBlack{}, &entity.Journal{},
 		&entity.Link{}, &entity.Log{}, &entity.Menu{}, &entity.Meta{}, &entity.Option{}, &entity.Photo{}, &entity.Post{},
-		&entity.PostCategory{}, &entity.PostTag{}, &entity.Tag{}, &entity.ThemeSetting{}, &entity.User{})
+		&entity.PostCategory{}, &entity.PostTag{}, &entity.Tag{}, &entity.ThemeSetting{}, &entity.User{}, &entity.MfaRecoveryCode{})
 	if err != nil {
 		airpressLog.Fatal("failed auto migrate db", zap.Error(err))
+	}
+	if err := migrateUserRBAC(db); err != nil {
+		airpressLog.Fatal("failed to migrate user rbac", zap.Error(err))
 	}
 }
 

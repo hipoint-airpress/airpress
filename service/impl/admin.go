@@ -4,13 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
-	uuid2 "github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/hipoint-airpress/airpress/cache"
@@ -29,28 +31,38 @@ import (
 )
 
 type adminServiceImpl struct {
-	UserService      service.UserService
-	OptionService    service.OptionService
-	Cache            cache.Cache
-	Config           *config.Config
-	Event            event.Bus
-	TwoFactorTOTPMFA service.TwoFactorTOTPMFAService
-	EmailService     service.EmailService
+	UserService         service.UserService
+	OptionService       service.OptionService
+	Cache               cache.Cache
+	Config              *config.Config
+	Event               event.Bus
+	TwoFactorTOTPMFA    service.TwoFactorTOTPMFAService
+	EmailService        service.EmailService
+	RecoveryCodeService service.RecoveryCodeService
+	LoginSecurity       *loginSecurity
 }
 
-func NewAdminService(userService service.UserService, cache cache.Cache, config *config.Config, event event.Bus, twoFactorMFA service.TwoFactorTOTPMFAService, emailService service.EmailService) service.AdminService {
+func NewAdminService(userService service.UserService, optionService service.OptionService, cache cache.Cache, config *config.Config, event event.Bus, twoFactorMFA service.TwoFactorTOTPMFAService, emailService service.EmailService, recoveryCodeService service.RecoveryCodeService) service.AdminService {
 	return &adminServiceImpl{
-		UserService:      userService,
-		Cache:            cache,
-		Config:           config,
-		Event:            event,
-		TwoFactorTOTPMFA: twoFactorMFA,
-		EmailService:     emailService,
+		UserService:         userService,
+		OptionService:       optionService,
+		Cache:               cache,
+		Config:              config,
+		Event:               event,
+		TwoFactorTOTPMFA:    twoFactorMFA,
+		EmailService:        emailService,
+		RecoveryCodeService: recoveryCodeService,
+		LoginSecurity:       newLoginSecurity(cache),
 	}
 }
 
 func (a *adminServiceImpl) Authenticate(ctx context.Context, loginParam param.LoginParam) (*entity.User, error) {
 	missMatchTip := "用户名或密码不正确"
+	ip := util.GetClientIP(ctx)
+
+	if err := a.LoginSecurity.CheckPasswordLock(loginParam.Username, ip); err != nil {
+		return nil, err
+	}
 
 	var user *entity.User
 	err := util.Validate.Var(loginParam.Username, "email")
@@ -62,20 +74,26 @@ func (a *adminServiceImpl) Authenticate(ctx context.Context, loginParam param.Lo
 	}
 
 	if xerr.GetType(err) == xerr.NoRecord {
+		a.LoginSecurity.RecordPasswordFailure(loginParam.Username, 0, ip)
 		return nil, xerr.WithMsg(err, missMatchTip).WithStatus(xerr.StatusBadRequest)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	err = a.UserService.MustNotExpire(ctx, user.ExpireTime)
-	if err != nil {
+	if user.Disabled {
+		return nil, xerr.Forbidden.New("").WithStatus(xerr.StatusForbidden).WithMsg("账号已被禁用")
+	}
+
+	if err := a.UserService.MustNotExpire(ctx, user.ExpireTime); err != nil {
 		return nil, err
 	}
 
 	if !a.UserService.PasswordMatch(ctx, user.Password, loginParam.Password) {
+		a.LoginSecurity.RecordPasswordFailure(loginParam.Username, user.ID, ip)
 		return nil, xerr.BadParam.New("").WithMsg(missMatchTip).WithStatus(xerr.StatusBadRequest)
 	}
+	a.LoginSecurity.ClearPasswordFailures(loginParam.Username, user.ID, ip)
 	return user, nil
 }
 
@@ -85,21 +103,65 @@ func (a *adminServiceImpl) Auth(ctx context.Context, loginParam param.LoginParam
 		return nil, err
 	}
 	if a.TwoFactorTOTPMFA.UseMFA(user.MfaType) {
-		if len(loginParam.AuthCode) != 6 {
-			return nil, xerr.WithMsg(nil, "请输入6位两步验证码").WithStatus(xerr.StatusBadRequest)
+		if err := a.LoginSecurity.CheckMFALock(user.ID); err != nil {
+			return nil, err
 		}
-		mfaAuth := a.TwoFactorTOTPMFA.ValidateTFACode(user.MfaKey, loginParam.AuthCode)
-		if !mfaAuth {
-			return nil, xerr.WithStatus(nil, xerr.StatusBadRequest).WithMsg("两步验证码验证错误")
+		ok, err := a.validateSecondFactor(ctx, user, loginParam.AuthCode)
+		if err != nil {
+			return nil, err
 		}
+		if !ok {
+			a.LoginSecurity.RecordMFAFailure(user.ID)
+			return nil, xerr.WithStatus(nil, xerr.StatusBadRequest).WithMsg("两步验证码或恢复码验证错误")
+		}
+		a.LoginSecurity.ClearMFAFailures(user.ID)
 	}
+
+	enrollmentRequired, err := a.MFAEnrollmentRequired(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	a.LoginSecurity.ClearAll(loginParam.Username, user.ID, util.GetClientIP(ctx))
 	a.Event.Publish(ctx, &event.LogEvent{
 		LogKey:    user.Username,
 		LogType:   consts.LogTypeLoggedIn,
 		Content:   user.Nickname,
 		IPAddress: util.GetClientIP(ctx),
 	})
-	return a.buildAuthToken(user), nil
+	token, err := a.buildAuthToken(user)
+	if err != nil {
+		return nil, err
+	}
+	token.MFAEnrollmentRequired = enrollmentRequired
+	return token, nil
+}
+
+func (a *adminServiceImpl) MFAEnrollmentRequired(ctx context.Context, user *entity.User) (bool, error) {
+	return mfaEnrollmentRequired(ctx, a.OptionService, user)
+}
+
+func (a *adminServiceImpl) validateSecondFactor(ctx context.Context, user *entity.User, authCode string) (bool, error) {
+	code := strings.TrimSpace(authCode)
+	if isSixDigitCode(code) {
+		return a.TwoFactorTOTPMFA.ValidateTFACode(user.MfaKey, code), nil
+	}
+	if a.RecoveryCodeService == nil {
+		return false, nil
+	}
+	return a.RecoveryCodeService.ValidateAndConsume(ctx, user.ID, code)
+}
+
+func isSixDigitCode(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	for _, char := range code {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *adminServiceImpl) ClearToken(ctx context.Context) error {
@@ -107,14 +169,7 @@ func (a *adminServiceImpl) ClearToken(ctx context.Context) error {
 	if !ok || user == nil {
 		return xerr.Forbidden.New("").WithStatus(xerr.StatusForbidden).WithMsg("未登录")
 	}
-	accessToken, _ := a.Cache.Get(cache.BuildAccessTokenKey(user.ID))
-	refreshToken, _ := a.Cache.Get(cache.BuildRefreshTokenKey(user.ID))
-
-	a.Cache.Delete(cache.BuildTokenAccessKey(accessToken.(string)))
-	a.Cache.Delete(cache.BuildTokenRefreshKey(refreshToken.(string)))
-
-	a.Cache.Delete(cache.BuildAccessTokenKey(user.ID))
-	a.Cache.Delete(cache.BuildRefreshTokenKey(user.ID))
+	clearUserTokens(a.Cache, user.ID)
 	a.Event.Publish(ctx, &event.LogEvent{
 		LogKey:    user.Username,
 		LogType:   consts.LogTypeLoggedOut,
@@ -149,9 +204,27 @@ func (a *adminServiceImpl) SendResetPasswordCode(ctx context.Context, resetParam
 	return a.EmailService.SendTextEmail(ctx, resetParam.Email, "找回密码验证码", content)
 }
 
-func (a *adminServiceImpl) buildAuthToken(user *entity.User) *dto.AuthTokenDTO {
-	accessToken := uuid2.New().String()
-	refreshToken := uuid2.New().String()
+// GenerateAccessToken 生成 256 位密码学随机 token（64 位十六进制）。
+func GenerateAccessToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := cryptorand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func (a *adminServiceImpl) buildAuthToken(user *entity.User) (*dto.AuthTokenDTO, error) {
+	// 单会话语义：同一账号重新登录时让旧设备下线。
+	clearUserTokens(a.Cache, user.ID)
+
+	accessToken, err := GenerateAccessToken()
+	if err != nil {
+		return nil, err
+	}
+	refreshToken, err := GenerateAccessToken()
+	if err != nil {
+		return nil, err
+	}
 
 	authToken := &dto.AuthTokenDTO{}
 	authToken.AccessToken = accessToken
@@ -164,20 +237,48 @@ func (a *adminServiceImpl) buildAuthToken(user *entity.User) *dto.AuthTokenDTO {
 	a.Cache.Set(cache.BuildAccessTokenKey(user.ID), accessToken, time.Second*consts.AccessTokenExpiredSeconds)
 	a.Cache.Set(cache.BuildRefreshTokenKey(user.ID), refreshToken, consts.RefreshTokenExpiredDays*24*3600*time.Second)
 
-	return authToken
+	return authToken, nil
 }
 
 func (a *adminServiceImpl) RefreshToken(ctx context.Context, refreshToken string) (*dto.AuthTokenDTO, error) {
-	userID, ok := a.Cache.Get(cache.BuildTokenRefreshKey(refreshToken))
+	value, ok := a.Cache.Get(cache.BuildTokenRefreshKey(refreshToken))
 	if !ok {
 		return nil, xerr.WithMsg(nil, "登录状态已失效，请重新登录").WithStatus(xerr.StatusBadRequest)
 	}
-	userDAL := dal.GetQueryByCtx(ctx).User
-	user, err := userDAL.WithContext(ctx).Where(userDAL.ID.Eq(userID.(int32))).First()
+	userID, ok := value.(int32)
+	if !ok {
+		return nil, xerr.WithMsg(nil, "登录状态已失效，请重新登录").WithStatus(xerr.StatusBadRequest)
+	}
+	user, err := a.UserService.GetByID(ctx, userID)
+	if xerr.GetType(err) == xerr.NoRecord {
+		return nil, xerr.WithMsg(err, "用户不存在").WithStatus(xerr.StatusUnauthorized)
+	}
 	if err != nil {
 		return nil, err
 	}
-	return a.buildAuthToken(user), nil
+	if user.Disabled {
+		return nil, xerr.Forbidden.New("").WithStatus(xerr.StatusForbidden).WithMsg("账号已被禁用")
+	}
+	if err := a.UserService.MustNotExpire(ctx, user.ExpireTime); err != nil {
+		return nil, err
+	}
+	return a.buildAuthToken(user)
+}
+
+// clearUserTokens 删除某个用户当前有效的 access/refresh token 及其反向映射。
+func clearUserTokens(c cache.Cache, userID int32) {
+	if value, ok := c.Get(cache.BuildAccessTokenKey(userID)); ok {
+		if token, ok := value.(string); ok {
+			c.Delete(cache.BuildTokenAccessKey(token))
+		}
+		c.Delete(cache.BuildAccessTokenKey(userID))
+	}
+	if value, ok := c.Get(cache.BuildRefreshTokenKey(userID)); ok {
+		if token, ok := value.(string); ok {
+			c.Delete(cache.BuildTokenRefreshKey(token))
+		}
+		c.Delete(cache.BuildRefreshTokenKey(userID))
+	}
 }
 
 func (a *adminServiceImpl) GetEnvironments(ctx context.Context) *dto.EnvironmentDTO {

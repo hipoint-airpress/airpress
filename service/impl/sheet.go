@@ -55,6 +55,9 @@ func (s sheetServiceImpl) Page(ctx context.Context, page param.Page, sort *param
 	if err != nil {
 		return nil, 0, err
 	}
+	if user, ok := currentUser(ctx); ok && user.Role == consts.UserRoleAuthor {
+		sheetDO = sheetDO.Where(sheetDAL.AuthorID.Eq(user.ID))
+	}
 	sheets, totalCount, err := sheetDO.FindByPage(page.PageSize*page.PageNum, page.PageSize)
 	if err != nil {
 		return nil, 0, err
@@ -125,6 +128,9 @@ func (s sheetServiceImpl) Update(ctx context.Context, sheetID int32, sheetParam 
 	sheet, err := sheetDAL.WithContext(ctx).Where(sheetDAL.ID.Eq(sheetID)).First()
 	if err != nil {
 		return nil, WrapDBErr(err)
+	}
+	if err := ensureAuthorOwnsPost(ctx, sheet); err != nil {
+		return nil, err
 	}
 	sheetToUpdate, err := s.ConvertParam(ctx, sheetParam)
 	if err != nil {

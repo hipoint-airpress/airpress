@@ -11,6 +11,7 @@ import (
 type AdminService interface {
 	Authenticate(ctx context.Context, loginParam param.LoginParam) (*entity.User, error)
 	Auth(ctx context.Context, loginParam param.LoginParam) (*dto.AuthTokenDTO, error)
+	MFAEnrollmentRequired(ctx context.Context, user *entity.User) (bool, error)
 	ClearToken(ctx context.Context) error
 	SendResetPasswordCode(ctx context.Context, resetParam param.ResetPasswordParam) error
 	RefreshToken(ctx context.Context, refreshToken string) (*dto.AuthTokenDTO, error)

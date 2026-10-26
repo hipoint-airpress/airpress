@@ -123,6 +123,9 @@ func (a *attachmentServiceImpl) Page(ctx context.Context, queryParam *param.Atta
 	if queryParam.MediaType != "" {
 		attachmentDo = attachmentDo.Where(attachmentDAL.MediaType.Eq(queryParam.MediaType))
 	}
+	if user, ok := currentUser(ctx); ok && user.Role == consts.UserRoleAuthor {
+		attachmentDo = attachmentDo.Where(attachmentDAL.UserID.Eq(user.ID))
+	}
 	attachments, totalCount, err := attachmentDo.FindByPage(queryParam.PageNum*queryParam.PageSize, queryParam.PageSize)
 	if err != nil {
 		return nil, 0, WrapDBErr(err)
@@ -135,6 +138,9 @@ func (a *attachmentServiceImpl) GetAttachment(ctx context.Context, attachmentID 
 	attachment, err := attachmentDAL.WithContext(ctx).Where(attachmentDAL.ID.Eq(attachmentID)).Take()
 	if err != nil {
 		return nil, WrapDBErr(err)
+	}
+	if err := ensureAuthorOwnsAttachment(ctx, attachment); err != nil {
+		return nil, err
 	}
 	return attachment, nil
 }
@@ -170,6 +176,9 @@ func (a *attachmentServiceImpl) Upload(ctx context.Context, fileHeader *multipar
 		ThumbPath: strings.ReplaceAll(attachmentDTO.ThumbPath, string(os.PathSeparator), "/"),
 		Type:      attachmentDTO.AttachmentType,
 		Width:     attachmentDTO.Width,
+	}
+	if user, ok := currentUser(ctx); ok {
+		attachmentEntity.UserID = user.ID
 	}
 
 	// change file path separator to url separator

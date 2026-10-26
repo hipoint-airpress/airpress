@@ -27,6 +27,7 @@ type Attachment struct {
 	ThumbPath  string                `gorm:"column:thumb_path;type:varchar(1023);not null" json:"thumb_path"`
 	Type       consts.AttachmentType `gorm:"column:type;type:bigint;not null" json:"type"`
 	Width      int32                 `gorm:"column:width;type:int;not null" json:"width"`
+	UserID     int32                 `gorm:"column:user_id;type:int;not null;default:0;index:attachment_user_id" json:"user_id"`
 }
 
 // TableName Attachment's table name

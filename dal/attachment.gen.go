@@ -38,6 +38,7 @@ func newAttachment(db *gorm.DB, opts ...gen.DOOption) attachment {
 	_attachment.ThumbPath = field.NewString(tableName, "thumb_path")
 	_attachment.Type = field.NewField(tableName, "type")
 	_attachment.Width = field.NewInt32(tableName, "width")
+	_attachment.UserID = field.NewInt32(tableName, "user_id")
 
 	_attachment.fillFieldMap()
 
@@ -61,6 +62,7 @@ type attachment struct {
 	ThumbPath  field.String
 	Type       field.Field
 	Width      field.Int32
+	UserID     field.Int32
 
 	fieldMap map[string]field.Expr
 }
@@ -90,6 +92,7 @@ func (a *attachment) updateTableName(table string) *attachment {
 	a.ThumbPath = field.NewString(table, "thumb_path")
 	a.Type = field.NewField(table, "type")
 	a.Width = field.NewInt32(table, "width")
+	a.UserID = field.NewInt32(table, "user_id")
 
 	a.fillFieldMap()
 
@@ -116,7 +119,7 @@ func (a *attachment) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (a *attachment) fillFieldMap() {
-	a.fieldMap = make(map[string]field.Expr, 13)
+	a.fieldMap = make(map[string]field.Expr, 14)
 	a.fieldMap["id"] = a.ID
 	a.fieldMap["create_time"] = a.CreateTime
 	a.fieldMap["update_time"] = a.UpdateTime
@@ -130,6 +133,7 @@ func (a *attachment) fillFieldMap() {
 	a.fieldMap["thumb_path"] = a.ThumbPath
 	a.fieldMap["type"] = a.Type
 	a.fieldMap["width"] = a.Width
+	a.fieldMap["user_id"] = a.UserID
 }
 
 func (a attachment) clone(db *gorm.DB) attachment {

@@ -75,6 +75,9 @@ func (p postServiceImpl) Page(ctx context.Context, postQuery param.PostQuery) ([
 	if postQuery.CategoryID != nil {
 		postDo.Join(&entity.PostCategory{}, postDAL.ID.EqCol(postCategoryDAL.PostID)).Where(postCategoryDAL.CategoryID.Eq(*postQuery.CategoryID))
 	}
+	if user, ok := currentUser(ctx); ok && user.Role == consts.UserRoleAuthor {
+		postDo = postDo.Where(postDAL.AuthorID.Eq(user.ID))
+	}
 
 	posts, totalCount, err := postDo.FindByPage(postQuery.PageNum*postQuery.PageSize, postQuery.PageSize)
 	if err != nil {
@@ -127,6 +130,9 @@ func (p postServiceImpl) Update(ctx context.Context, postID int32, postParam *pa
 	post, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(postID)).First()
 	if err != nil {
 		return nil, WrapDBErr(err)
+	}
+	if err := ensureAuthorOwnsPost(ctx, post); err != nil {
+		return nil, err
 	}
 	postToUpdate, err := p.ConvertParam(ctx, postParam)
 	if err != nil {

@@ -1,5 +1,6 @@
 package dto
 
 type LoginPreCheckDTO struct {
-	NeedMFACode bool `json:"needMFACode"`
+	NeedMFACode           bool `json:"needMFACode"`
+	MFAEnrollmentRequired bool `json:"mfaEnrollmentRequired"`
 }

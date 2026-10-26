@@ -206,6 +206,9 @@ func (b basePostServiceImpl) GetByPostID(ctx context.Context, postID int32) (*en
 	if err != nil {
 		return nil, WrapDBErr(err)
 	}
+	if err := ensureAuthorOwnsPost(ctx, post); err != nil {
+		return nil, err
+	}
 	return post, nil
 }
 
@@ -231,6 +234,13 @@ func (b basePostServiceImpl) Delete(ctx context.Context, postID int32) error {
 		postMetaDAL := tx.Meta
 		postCommentDAL := tx.Comment
 
+		post, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(postID)).First()
+		if err != nil {
+			return WrapDBErr(err)
+		}
+		if err := ensureAuthorOwnsPost(ctx, post); err != nil {
+			return err
+		}
 		deleteResult, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(postID)).Delete()
 		if err != nil {
 			return WrapDBErr(err)
@@ -269,6 +279,9 @@ func (b basePostServiceImpl) UpdateStatus(ctx context.Context, postID int32, sta
 	if err != nil {
 		return nil, WrapDBErr(err)
 	}
+	if err := ensureAuthorOwnsPost(ctx, post); err != nil {
+		return nil, err
+	}
 	updateResult, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(postID)).UpdateColumnSimple(postDAL.Status.Value(status))
 	if err != nil {
 		return nil, WrapDBErr(err)
@@ -281,6 +294,15 @@ func (b basePostServiceImpl) UpdateStatus(ctx context.Context, postID int32, sta
 }
 
 func (b basePostServiceImpl) DeleteBatch(ctx context.Context, postIDs []int32) error {
+	uniquePostIDMap := make(map[int32]struct{}, len(postIDs))
+	for _, postID := range postIDs {
+		uniquePostIDMap[postID] = struct{}{}
+	}
+	uniqueIDs := make([]int32, 0, len(uniquePostIDMap))
+	for postID := range uniquePostIDMap {
+		uniqueIDs = append(uniqueIDs, postID)
+	}
+
 	err := dal.GetQueryByCtx(ctx).Transaction(func(tx *dal.Query) error {
 		postDAL := tx.Post
 		postTagDAL := tx.PostTag
@@ -288,26 +310,36 @@ func (b basePostServiceImpl) DeleteBatch(ctx context.Context, postIDs []int32) e
 		postMetaDAL := tx.Meta
 		postCommentDAL := tx.Comment
 
-		deleteResult, err := postDAL.WithContext(ctx).Where(postDAL.ID.In(postIDs...)).Delete()
+		posts, err := postDAL.WithContext(ctx).Where(postDAL.ID.In(uniqueIDs...)).Find()
 		if err != nil {
 			return WrapDBErr(err)
 		}
-		if deleteResult.RowsAffected != 1 {
+		for _, post := range posts {
+			if err := ensureAuthorOwnsPost(ctx, post); err != nil {
+				return err
+			}
+		}
+
+		deleteResult, err := postDAL.WithContext(ctx).Where(postDAL.ID.In(uniqueIDs...)).Delete()
+		if err != nil {
+			return WrapDBErr(err)
+		}
+		if deleteResult.RowsAffected != int64(len(uniqueIDs)) {
 			return xerr.NoType.New("").WithMsg("delete post failed")
 		}
-		_, err = postTagDAL.WithContext(ctx).Where(postTagDAL.PostID.In(postIDs...)).Delete()
+		_, err = postTagDAL.WithContext(ctx).Where(postTagDAL.PostID.In(uniqueIDs...)).Delete()
 		if err != nil {
 			return WrapDBErr(err)
 		}
-		_, err = postCategoryDAL.WithContext(ctx).Where(postCategoryDAL.PostID.In(postIDs...)).Delete()
+		_, err = postCategoryDAL.WithContext(ctx).Where(postCategoryDAL.PostID.In(uniqueIDs...)).Delete()
 		if err != nil {
 			return WrapDBErr(err)
 		}
-		_, err = postMetaDAL.WithContext(ctx).Where(postMetaDAL.PostID.In(postIDs...)).Delete()
+		_, err = postMetaDAL.WithContext(ctx).Where(postMetaDAL.PostID.In(uniqueIDs...)).Delete()
 		if err != nil {
 			return WrapDBErr(err)
 		}
-		_, err = postCommentDAL.WithContext(ctx).Where(postCommentDAL.PostID.In(postIDs...)).Delete()
+		_, err = postCommentDAL.WithContext(ctx).Where(postCommentDAL.PostID.In(uniqueIDs...)).Delete()
 		if err != nil {
 			return WrapDBErr(err)
 		}
@@ -327,6 +359,9 @@ func (b basePostServiceImpl) CreateOrUpdate(ctx context.Context, post *entity.Po
 
 		// create post
 		if post.ID == 0 {
+			if user, ok := currentUser(ctx); ok {
+				post.AuthorID = user.ID
+			}
 			postCount, err := postDAL.WithContext(ctx).Select(field.Star).Omit(postDAL.UpdateTime).Where(postDAL.Slug.Eq(post.Slug)).Count()
 			if err != nil {
 				return WrapDBErr(err)
@@ -349,6 +384,16 @@ func (b basePostServiceImpl) CreateOrUpdate(ctx context.Context, post *entity.Po
 			}
 		} else {
 			// update post
+			existing, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(post.ID)).First()
+			if err != nil {
+				return WrapDBErr(err)
+			}
+			if err := ensureAuthorOwnsPost(ctx, existing); err != nil {
+				return err
+			}
+			// 作者归属不允许通过编辑请求修改。
+			post.AuthorID = existing.AuthorID
+
 			slugCount, err := postDAL.WithContext(ctx).Where(postDAL.Slug.Eq(post.Slug), postDAL.ID.Neq(post.ID)).Count()
 			if err != nil {
 				return WrapDBErr(err)
@@ -466,6 +511,15 @@ func (b basePostServiceImpl) UpdateStatusBatch(ctx context.Context, status const
 	}
 	err := dal.GetQueryByCtx(ctx).Transaction(func(tx *dal.Query) error {
 		postDAL := tx.Post
+		posts, err := postDAL.WithContext(ctx).Where(postDAL.ID.In(uniqueIDs...)).Find()
+		if err != nil {
+			return WrapDBErr(err)
+		}
+		for _, post := range posts {
+			if err := ensureAuthorOwnsPost(ctx, post); err != nil {
+				return err
+			}
+		}
 		updateResult, err := postDAL.WithContext(ctx).Where(postDAL.ID.In(uniqueIDs...)).UpdateColumnSimple(postDAL.Status.Value(status))
 		if err != nil {
 			return WrapDBErr(err)
@@ -491,6 +545,9 @@ func (b basePostServiceImpl) UpdateDraftContent(ctx context.Context, postID int3
 	post, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(postID)).First()
 	if err != nil {
 		return nil, WrapDBErr(err)
+	}
+	if err := ensureAuthorOwnsPost(ctx, post); err != nil {
+		return nil, err
 	}
 	if post.OriginalContent != content {
 		updateResult, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(postID)).UpdateColumnSimple(postDAL.OriginalContent.Value(originalContent), postDAL.FormatContent.Value(content))

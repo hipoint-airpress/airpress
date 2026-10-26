@@ -56,7 +56,8 @@ func main() {
 		g.GenerateModel("post_tag"),
 		g.GenerateModel("tag"),
 		g.GenerateModel("theme_setting"),
-		g.GenerateModel("user", gen.FieldType("mfa_type", "consts.MFAType")),
+		g.GenerateModel("user", gen.FieldType("mfa_type", "consts.MFAType"), gen.FieldType("role", "consts.UserRole")),
+		g.GenerateModel("mfa_recovery_code"),
 	)
 
 	// apply diy interfaces on structs or table models

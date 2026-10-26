@@ -147,4 +147,5 @@ var AllProperty = []Property{
 	PhotoPageSize,
 	JournalPageSize,
 	JWTSecret,
+	MFAPolicy,
 }

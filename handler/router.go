@@ -70,24 +70,35 @@ func (s *Server) RegisterRouters() {
 			{
 				authRouter := adminAPIRouter.Group("")
 				authRouter.Use(s.AuthMiddleware.GetWrapHandler())
+				// 所有登录用户可访问的个人与只读接口。
+				commonRouter := authRouter.Group("")
+				// 内容写操作：编辑与超管。
+				editorRouter := authRouter.Group("")
+				editorRouter.Use(middleware.RequireAnyRole(consts.UserRoleEditor, consts.UserRoleSuperAdmin))
+				// 系统设置与用户管理：仅超管。
+				superAdminRouter := authRouter.Group("")
+				superAdminRouter.Use(middleware.RequireAnyRole(consts.UserRoleSuperAdmin))
+
 				authRouter.POST("/logout", s.wrapHandler(s.AdminHandler.LogOut))
 				authRouter.POST("/password/code", s.wrapHandler(s.AdminHandler.SendResetCode))
-				authRouter.GET("/environments", s.wrapHandler(s.AdminHandler.GetEnvironments))
-				authRouter.GET("/airpress/logfile", s.wrapHandler(s.AdminHandler.GetLogFiles))
+				superAdminRouter.GET("/environments", s.wrapHandler(s.AdminHandler.GetEnvironments))
+				superAdminRouter.GET("/airpress/logfile", s.wrapHandler(s.AdminHandler.GetLogFiles))
 				{
-					attachmentRouter := authRouter.Group("/attachments")
+					attachmentRouter := commonRouter.Group("/attachments")
 					attachmentRouter.POST("/upload", s.wrapHandler(s.AttachmentHandler.UploadAttachment))
 					attachmentRouter.POST("/uploads", s.wrapHandler(s.AttachmentHandler.UploadAttachments))
-					attachmentRouter.DELETE("/:id", s.wrapHandler(s.AttachmentHandler.DeleteAttachment))
-					attachmentRouter.DELETE("", s.wrapHandler(s.AttachmentHandler.DeleteAttachmentInBatch))
 					attachmentRouter.GET("", s.wrapHandler(s.AttachmentHandler.QueryAttachment))
 					attachmentRouter.GET("/:id", s.wrapHandler(s.AttachmentHandler.GetAttachmentByID))
-					attachmentRouter.PUT("/:id", s.wrapHandler(s.AttachmentHandler.UpdateAttachment))
 					attachmentRouter.GET("/media_types", s.wrapHandler(s.AttachmentHandler.GetAllMediaType))
 					attachmentRouter.GET("types", s.wrapHandler(s.AttachmentHandler.GetAllTypes))
+
+					editorAttachmentRouter := editorRouter.Group("/attachments")
+					editorAttachmentRouter.DELETE("/:id", s.wrapHandler(s.AttachmentHandler.DeleteAttachment))
+					editorAttachmentRouter.DELETE("", s.wrapHandler(s.AttachmentHandler.DeleteAttachmentInBatch))
+					editorAttachmentRouter.PUT("/:id", s.wrapHandler(s.AttachmentHandler.UpdateAttachment))
 				}
 				{
-					backupRouter := authRouter.Group("/backups")
+					backupRouter := superAdminRouter.Group("/backups")
 					backupRouter.POST("/work-dir", s.wrapHandler(s.BackupHandler.BackupWholeSite))
 					backupRouter.GET("/work-dir", s.wrapHandler(s.BackupHandler.ListBackups))
 					backupRouter.GET("/work-dir/*path", s.BackupHandler.HandleWorkDir)
@@ -103,17 +114,19 @@ func (s *Server) RegisterRouters() {
 					backupRouter.GET("/markdown/export/:filename", s.BackupHandler.DownloadMarkdown)
 				}
 				{
-					categoryRouter := authRouter.Group("/categories")
-					categoryRouter.PUT("/batch", s.wrapHandler(s.CategoryHandler.UpdateCategoryBatch))
+					categoryRouter := commonRouter.Group("/categories")
 					categoryRouter.GET("/:categoryID", s.wrapHandler(s.CategoryHandler.GetCategoryByID))
 					categoryRouter.GET("", s.wrapHandler(s.CategoryHandler.ListAllCategory))
 					categoryRouter.GET("/tree_view", s.wrapHandler(s.CategoryHandler.ListAsTree))
-					categoryRouter.POST("", s.wrapHandler(s.CategoryHandler.CreateCategory))
-					categoryRouter.PUT("/:categoryID", s.wrapHandler(s.CategoryHandler.UpdateCategory))
-					categoryRouter.DELETE("/:categoryID", s.wrapHandler(s.CategoryHandler.DeleteCategory))
+
+					editorCategoryRouter := editorRouter.Group("/categories")
+					editorCategoryRouter.PUT("/batch", s.wrapHandler(s.CategoryHandler.UpdateCategoryBatch))
+					editorCategoryRouter.POST("", s.wrapHandler(s.CategoryHandler.CreateCategory))
+					editorCategoryRouter.PUT("/:categoryID", s.wrapHandler(s.CategoryHandler.UpdateCategory))
+					editorCategoryRouter.DELETE("/:categoryID", s.wrapHandler(s.CategoryHandler.DeleteCategory))
 				}
 				{
-					postRouter := authRouter.Group("/posts")
+					postRouter := commonRouter.Group("/posts")
 					postRouter.GET("", s.wrapHandler(s.PostHandler.ListPosts))
 					postRouter.GET("/latest", s.wrapHandler(s.PostHandler.ListLatestPosts))
 					postRouter.GET("/status/:status", s.wrapHandler(s.PostHandler.ListPostsByStatus))
@@ -127,40 +140,52 @@ func (s *Server) RegisterRouters() {
 					postRouter.DELETE("", s.wrapHandler(s.PostHandler.DeletePostBatch))
 					postRouter.GET("/:postID/preview", s.PostHandler.PreviewPost)
 					{
-						postCommentRouter := postRouter.Group("/comments")
+						postCommentRouter := commonRouter.Group("/posts/comments")
 						postCommentRouter.GET("", s.wrapHandler(s.PostCommentHandler.ListPostComment))
 						postCommentRouter.GET("/latest", s.wrapHandler(s.PostCommentHandler.ListPostCommentLatest))
 						postCommentRouter.GET("/:postID/tree_view", s.wrapHandler(s.PostCommentHandler.ListPostCommentAsTree))
 						postCommentRouter.GET("/:postID/list_view", s.wrapHandler(s.PostCommentHandler.ListPostCommentWithParent))
-						postCommentRouter.POST("", s.wrapHandler(s.PostCommentHandler.CreatePostComment))
-						postCommentRouter.PUT("/:commentID", s.wrapHandler(s.PostCommentHandler.UpdatePostComment))
-						postCommentRouter.PUT("/:commentID/status/:status", s.wrapHandler(s.PostCommentHandler.UpdatePostCommentStatus))
-						postCommentRouter.PUT("/status/:status", s.wrapHandler(s.PostCommentHandler.UpdatePostCommentStatusBatch))
-						postCommentRouter.DELETE("/:commentID", s.wrapHandler(s.PostCommentHandler.DeletePostComment))
-						postCommentRouter.DELETE("", s.wrapHandler(s.PostCommentHandler.DeletePostCommentBatch))
+
+						editorPostCommentRouter := editorRouter.Group("/posts/comments")
+						editorPostCommentRouter.POST("", s.wrapHandler(s.PostCommentHandler.CreatePostComment))
+						editorPostCommentRouter.PUT("/:commentID", s.wrapHandler(s.PostCommentHandler.UpdatePostComment))
+						editorPostCommentRouter.PUT("/:commentID/status/:status", s.wrapHandler(s.PostCommentHandler.UpdatePostCommentStatus))
+						editorPostCommentRouter.PUT("/status/:status", s.wrapHandler(s.PostCommentHandler.UpdatePostCommentStatusBatch))
+						editorPostCommentRouter.DELETE("/:commentID", s.wrapHandler(s.PostCommentHandler.DeletePostComment))
+						editorPostCommentRouter.DELETE("", s.wrapHandler(s.PostCommentHandler.DeletePostCommentBatch))
 					}
 				}
 				{
-					optionRouter := authRouter.Group("/options")
+					// 控制台启动时所有角色都需要读取这一小组安全配置。
+					commonRouter.POST("/options/map_view/keys", s.wrapHandler(s.OptionHandler.ListAllOptionsAsMapWithKey))
+
+					optionRouter := superAdminRouter.Group("/options")
 					optionRouter.GET("", s.wrapHandler(s.OptionHandler.ListAllOptions))
 					optionRouter.GET("/map_view", s.wrapHandler(s.OptionHandler.ListAllOptionsAsMap))
-					optionRouter.POST("/map_view/keys", s.wrapHandler(s.OptionHandler.ListAllOptionsAsMapWithKey))
 					optionRouter.POST("/saving", s.wrapHandler(s.OptionHandler.SaveOption))
 					optionRouter.POST("/map_view/saving", s.wrapHandler(s.OptionHandler.SaveOptionWithMap))
 				}
 				{
-					logRouter := authRouter.Group("/logs")
+					logRouter := superAdminRouter.Group("/logs")
 					logRouter.GET("/latest", s.wrapHandler(s.LogHandler.PageLatestLog))
 					logRouter.GET("", s.wrapHandler(s.LogHandler.PageLog))
 					logRouter.GET("/clear", s.wrapHandler(s.LogHandler.ClearLog))
 				}
 				{
-					statisticRouter := authRouter.Group("/statistics")
+					// 文章/页面编辑器需要读取可选的自定义模板列表，所有登录用户可用。
+					commonThemeRouter := commonRouter.Group("themes")
+					// 编辑器的元数据字段与自定义模板都来自当前主题，只读即可。
+					commonThemeRouter.GET("/activation", s.wrapHandler(s.ThemeHandler.GetActivatedTheme))
+					commonThemeRouter.GET("activation/template/custom/sheet", s.wrapHandler(s.ThemeHandler.ListCustomSheetTemplate))
+					commonThemeRouter.GET("activation/template/custom/post", s.wrapHandler(s.ThemeHandler.ListCustomPostTemplate))
+				}
+				{
+					statisticRouter := commonRouter.Group("/statistics")
 					statisticRouter.GET("", s.wrapHandler(s.StatisticHandler.Statistics))
 					statisticRouter.GET("user", s.wrapHandler(s.StatisticHandler.StatisticsWithUser))
 				}
 				{
-					sheetRouter := authRouter.Group("/sheets")
+					sheetRouter := commonRouter.Group("/sheets")
 					sheetRouter.GET("/:sheetID", s.wrapHandler(s.SheetHandler.GetSheetByID))
 					sheetRouter.GET("", s.wrapHandler(s.SheetHandler.ListSheet))
 					sheetRouter.POST("", s.wrapHandler(s.SheetHandler.CreateSheet))
@@ -169,22 +194,24 @@ func (s *Server) RegisterRouters() {
 					sheetRouter.PUT("/:sheetID/status/draft/content", s.wrapHandler(s.SheetHandler.UpdateSheetDraft))
 					sheetRouter.DELETE("/:sheetID", s.wrapHandler(s.SheetHandler.DeleteSheet))
 					sheetRouter.GET("/preview/:sheetID", s.SheetHandler.PreviewSheet)
-					sheetRouter.GET("/independent", s.wrapHandler(s.SheetHandler.IndependentSheets))
+					editorRouter.GET("/sheets/independent", s.wrapHandler(s.SheetHandler.IndependentSheets))
 					{
-						sheetCommentRouter := sheetRouter.Group("/comments")
+						sheetCommentRouter := commonRouter.Group("/sheets/comments")
 						sheetCommentRouter.GET("", s.wrapHandler(s.SheetCommentHandler.ListSheetComment))
 						sheetCommentRouter.GET("/latest", s.wrapHandler(s.SheetCommentHandler.ListSheetCommentLatest))
 						sheetCommentRouter.GET("/:sheetID/tree_view", s.wrapHandler(s.SheetCommentHandler.ListSheetCommentAsTree))
 						sheetCommentRouter.GET("/:sheetID/list_view", s.wrapHandler(s.SheetCommentHandler.ListSheetCommentWithParent))
-						sheetCommentRouter.POST("/", s.wrapHandler(s.SheetCommentHandler.CreateSheetComment))
-						sheetCommentRouter.PUT("/:commentID/status/:status", s.wrapHandler(s.SheetCommentHandler.UpdateSheetCommentStatus))
-						sheetCommentRouter.PUT("/status/:status", s.wrapHandler(s.SheetCommentHandler.UpdateSheetCommentStatusBatch))
-						sheetCommentRouter.DELETE("/:commentID", s.wrapHandler(s.SheetCommentHandler.DeleteSheetComment))
-						sheetCommentRouter.DELETE("", s.wrapHandler(s.SheetCommentHandler.DeleteSheetCommentBatch))
+
+						editorSheetCommentRouter := editorRouter.Group("/sheets/comments")
+						editorSheetCommentRouter.POST("/", s.wrapHandler(s.SheetCommentHandler.CreateSheetComment))
+						editorSheetCommentRouter.PUT("/:commentID/status/:status", s.wrapHandler(s.SheetCommentHandler.UpdateSheetCommentStatus))
+						editorSheetCommentRouter.PUT("/status/:status", s.wrapHandler(s.SheetCommentHandler.UpdateSheetCommentStatusBatch))
+						editorSheetCommentRouter.DELETE("/:commentID", s.wrapHandler(s.SheetCommentHandler.DeleteSheetComment))
+						editorSheetCommentRouter.DELETE("", s.wrapHandler(s.SheetCommentHandler.DeleteSheetCommentBatch))
 					}
 				}
 				{
-					journalRouter := authRouter.Group("/journals")
+					journalRouter := editorRouter.Group("/journals")
 					journalRouter.GET("", s.wrapHandler(s.JournalHandler.ListJournal))
 					journalRouter.GET("/latest", s.wrapHandler(s.JournalHandler.ListLatestJournal))
 					journalRouter.POST("", s.wrapHandler(s.JournalHandler.CreateJournal))
@@ -206,7 +233,7 @@ func (s *Server) RegisterRouters() {
 				}
 
 				{
-					linkRouter := authRouter.Group("/links")
+					linkRouter := editorRouter.Group("/links")
 					linkRouter.GET("", s.wrapHandler(s.LinkHandler.ListLinks))
 					linkRouter.GET("/:id", s.wrapHandler(s.LinkHandler.GetLinkByID))
 					linkRouter.POST("", s.wrapHandler(s.LinkHandler.CreateLink))
@@ -215,7 +242,7 @@ func (s *Server) RegisterRouters() {
 					linkRouter.GET("/teams", s.wrapHandler(s.LinkHandler.ListLinkTeams))
 				}
 				{
-					menuRouter := authRouter.Group("/menus")
+					menuRouter := superAdminRouter.Group("/menus")
 					menuRouter.GET("", s.wrapHandler(s.MenuHandler.ListMenus))
 					menuRouter.GET("/tree_view", s.wrapHandler(s.MenuHandler.ListMenusAsTree))
 					menuRouter.GET("/team/tree_view", s.wrapHandler(s.MenuHandler.ListMenusAsTreeByTeam))
@@ -229,15 +256,17 @@ func (s *Server) RegisterRouters() {
 					menuRouter.GET("/teams", s.wrapHandler(s.MenuHandler.ListMenuTeams))
 				}
 				{
-					tagRouter := authRouter.Group("/tags")
+					tagRouter := commonRouter.Group("/tags")
 					tagRouter.GET("", s.wrapHandler(s.TagHandler.ListTags))
 					tagRouter.GET("/:id", s.wrapHandler(s.TagHandler.GetTagByID))
-					tagRouter.POST("", s.wrapHandler(s.TagHandler.CreateTag))
-					tagRouter.PUT("/:id", s.wrapHandler(s.TagHandler.UpdateTag))
-					tagRouter.DELETE("/:id", s.wrapHandler(s.TagHandler.DeleteTag))
+
+					editorTagRouter := editorRouter.Group("/tags")
+					editorTagRouter.POST("", s.wrapHandler(s.TagHandler.CreateTag))
+					editorTagRouter.PUT("/:id", s.wrapHandler(s.TagHandler.UpdateTag))
+					editorTagRouter.DELETE("/:id", s.wrapHandler(s.TagHandler.DeleteTag))
 				}
 				{
-					photoRouter := authRouter.Group("/photos")
+					photoRouter := editorRouter.Group("/photos")
 					photoRouter.GET("/latest", s.wrapHandler(s.PhotoHandler.ListPhoto))
 					photoRouter.GET("", s.wrapHandler(s.PhotoHandler.PagePhotos))
 					photoRouter.GET("/:id", s.wrapHandler(s.PhotoHandler.GetPhotoByID))
@@ -248,16 +277,31 @@ func (s *Server) RegisterRouters() {
 					photoRouter.GET("/teams", s.wrapHandler(s.PhotoHandler.ListPhotoTeams))
 				}
 				{
-					userRouter := authRouter.Group("/users")
+					userRouter := commonRouter.Group("/users")
 					userRouter.GET("/profiles", s.wrapHandler(s.UserHandler.GetCurrentUserProfile))
 					userRouter.PUT("/profiles", s.wrapHandler(s.UserHandler.UpdateUserProfile))
 					userRouter.PUT("/profiles/password", s.wrapHandler(s.UserHandler.UpdatePassword))
 					userRouter.PUT("/mfa/generate", s.wrapHandler(s.UserHandler.GenerateMFAQRCode))
 					userRouter.PUT("/mfa/update", s.wrapHandler(s.UserHandler.UpdateMFA))
+					userRouter.GET("/mfa/recovery-codes", s.wrapHandler(s.UserHandler.GetRecoveryCodeCount))
+					userRouter.POST("/mfa/recovery-codes", s.wrapHandler(s.UserHandler.GenerateRecoveryCodes))
 				}
 				{
-					themeRouter := authRouter.Group("themes")
-					themeRouter.GET("/activation", s.wrapHandler(s.ThemeHandler.GetActivatedTheme))
+					manageRouter := superAdminRouter.Group("/manage")
+					manageRouter.GET("/users", s.wrapHandler(s.UserManagementHandler.ListUsers))
+					manageRouter.POST("/users", s.wrapHandler(s.UserManagementHandler.CreateUser))
+					manageRouter.GET("/users/:id", s.wrapHandler(s.UserManagementHandler.GetUser))
+					manageRouter.PUT("/users/:id", s.wrapHandler(s.UserManagementHandler.UpdateUser))
+					manageRouter.PUT("/users/:id/role", s.wrapHandler(s.UserManagementHandler.UpdateUserRole))
+					manageRouter.PUT("/users/:id/status", s.wrapHandler(s.UserManagementHandler.UpdateUserStatus))
+					manageRouter.PUT("/users/:id/password", s.wrapHandler(s.UserManagementHandler.ResetUserPassword))
+					manageRouter.GET("/users/:id/content-count", s.wrapHandler(s.UserManagementHandler.GetUserContentCount))
+					manageRouter.DELETE("/users/:id", s.wrapHandler(s.UserManagementHandler.DeleteUser))
+					manageRouter.GET("/mfa-policy", s.wrapHandler(s.UserManagementHandler.GetMFAPolicy))
+					manageRouter.PUT("/mfa-policy", s.wrapHandler(s.UserManagementHandler.SaveMFAPolicy))
+				}
+				{
+					themeRouter := superAdminRouter.Group("themes")
 					themeRouter.GET("/:themeID", s.wrapHandler(s.ThemeHandler.GetThemeByID))
 					themeRouter.GET("", s.wrapHandler(s.ThemeHandler.ListAllThemes))
 					themeRouter.GET("/activation/files", s.wrapHandler(s.ThemeHandler.ListActivatedThemeFile))
@@ -266,8 +310,6 @@ func (s *Server) RegisterRouters() {
 					themeRouter.GET("/:themeID/files/content", s.wrapHandler(s.ThemeHandler.GetThemeFileContentByID))
 					themeRouter.PUT("/files/content", s.wrapHandler(s.ThemeHandler.UpdateThemeFile))
 					themeRouter.PUT("/:themeID/files/content", s.wrapHandler(s.ThemeHandler.UpdateThemeFileByID))
-					themeRouter.GET("activation/template/custom/sheet", s.wrapHandler(s.ThemeHandler.ListCustomSheetTemplate))
-					themeRouter.GET("activation/template/custom/post", s.wrapHandler(s.ThemeHandler.ListCustomPostTemplate))
 					themeRouter.POST("/:themeID/activation", s.wrapHandler(s.ThemeHandler.ActivateTheme))
 					themeRouter.GET("activation/configurations", s.wrapHandler(s.ThemeHandler.GetActivatedThemeConfig))
 					themeRouter.GET("/:themeID/configurations", s.wrapHandler(s.ThemeHandler.GetThemeConfigByID))
@@ -287,7 +329,7 @@ func (s *Server) RegisterRouters() {
 					themeRouter.GET("activation/template/exists", s.wrapHandler(s.ThemeHandler.TemplateExist))
 				}
 				{
-					emailRouter := authRouter.Group("/mails")
+					emailRouter := superAdminRouter.Group("/mails")
 					emailRouter.POST("/test", s.wrapHandler(s.EmailHandler.Test))
 				}
 			}

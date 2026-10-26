@@ -12,9 +12,11 @@ type Status int
 
 const (
 	StatusBadRequest          = http.StatusBadRequest
+	StatusUnauthorized        = http.StatusUnauthorized
 	StatusInternalServerError = http.StatusInternalServerError
 	StatusForbidden           = http.StatusForbidden
 	StatusNotFound            = http.StatusNotFound
+	StatusTooManyRequests     = http.StatusTooManyRequests
 )
 
 type ErrorType uint

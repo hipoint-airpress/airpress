@@ -57,6 +57,7 @@ type Server struct {
 	TagHandler                *admin.TagHandler
 	ThemeHandler              *admin.ThemeHandler
 	UserHandler               *admin.UserHandler
+	UserManagementHandler     *admin.UserManagementHandler
 	EmailHandler              *admin.EmailHandler
 	IndexHandler              *content.IndexHandler
 	FeedHandler               *content.FeedHandler
@@ -113,6 +114,7 @@ type ServerParams struct {
 	TagHandler                *admin.TagHandler
 	ThemeHandler              *admin.ThemeHandler
 	UserHandler               *admin.UserHandler
+	UserManagementHandler     *admin.UserManagementHandler
 	EmailHandler              *admin.EmailHandler
 	IndexHandler              *content.IndexHandler
 	FeedHandler               *content.FeedHandler
@@ -176,6 +178,7 @@ func NewServer(param ServerParams, lifecycle fx.Lifecycle) *Server {
 		TagHandler:                param.TagHandler,
 		ThemeHandler:              param.ThemeHandler,
 		UserHandler:               param.UserHandler,
+		UserManagementHandler:     param.UserManagementHandler,
 		EmailHandler:              param.EmailHandler,
 		OptionService:             param.OptionService,
 		ThemeService:              param.ThemeService,

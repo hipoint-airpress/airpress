@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"github.com/hipoint-airpress/airpress/consts"
 )
 
 // -----------------------Attachment----------------
@@ -192,11 +194,21 @@ func (m *ThemeSetting) BeforeUpdate(tx *gorm.DB) (err error) {
 
 func (m *User) BeforeCreate(tx *gorm.DB) (err error) {
 	m.CreateTime = time.Now()
+	if m.Role == 0 {
+		m.Role = consts.UserRoleAuthor
+	}
 	return nil
 }
 
 func (m *User) BeforeUpdate(tx *gorm.DB) (err error) {
 	tx.Statement.SetColumn("update_time", time.Now())
+	return nil
+}
+
+// ------------------- MfaRecoveryCode -------------------
+
+func (m *MfaRecoveryCode) BeforeCreate(tx *gorm.DB) (err error) {
+	m.CreateTime = time.Now()
 	return nil
 }
 

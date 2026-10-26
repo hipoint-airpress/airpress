@@ -25,6 +25,7 @@ var (
 	Log                 *log
 	Menu                *menu
 	Meta                *meta
+	MfaRecoveryCode     *mfaRecoveryCode
 	Option              *option
 	Photo               *photo
 	Post                *post
@@ -47,6 +48,7 @@ func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 	Log = &Q.Log
 	Menu = &Q.Menu
 	Meta = &Q.Meta
+	MfaRecoveryCode = &Q.MfaRecoveryCode
 	Option = &Q.Option
 	Photo = &Q.Photo
 	Post = &Q.Post
@@ -70,6 +72,7 @@ func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
 		Log:                 newLog(db, opts...),
 		Menu:                newMenu(db, opts...),
 		Meta:                newMeta(db, opts...),
+		MfaRecoveryCode:     newMfaRecoveryCode(db, opts...),
 		Option:              newOption(db, opts...),
 		Photo:               newPhoto(db, opts...),
 		Post:                newPost(db, opts...),
@@ -94,6 +97,7 @@ type Query struct {
 	Log                 log
 	Menu                menu
 	Meta                meta
+	MfaRecoveryCode     mfaRecoveryCode
 	Option              option
 	Photo               photo
 	Post                post
@@ -119,6 +123,7 @@ func (q *Query) clone(db *gorm.DB) *Query {
 		Log:                 q.Log.clone(db),
 		Menu:                q.Menu.clone(db),
 		Meta:                q.Meta.clone(db),
+		MfaRecoveryCode:     q.MfaRecoveryCode.clone(db),
 		Option:              q.Option.clone(db),
 		Photo:               q.Photo.clone(db),
 		Post:                q.Post.clone(db),
@@ -151,6 +156,7 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 		Log:                 q.Log.replaceDB(db),
 		Menu:                q.Menu.replaceDB(db),
 		Meta:                q.Meta.replaceDB(db),
+		MfaRecoveryCode:     q.MfaRecoveryCode.replaceDB(db),
 		Option:              q.Option.replaceDB(db),
 		Photo:               q.Photo.replaceDB(db),
 		Post:                q.Post.replaceDB(db),
@@ -173,6 +179,7 @@ type queryCtx struct {
 	Log                 *logDo
 	Menu                *menuDo
 	Meta                *metaDo
+	MfaRecoveryCode     *mfaRecoveryCodeDo
 	Option              *optionDo
 	Photo               *photoDo
 	Post                *postDo
@@ -195,6 +202,7 @@ func (q *Query) WithContext(ctx context.Context) *queryCtx {
 		Log:                 q.Log.WithContext(ctx),
 		Menu:                q.Menu.WithContext(ctx),
 		Meta:                q.Meta.WithContext(ctx),
+		MfaRecoveryCode:     q.MfaRecoveryCode.WithContext(ctx),
 		Option:              q.Option.WithContext(ctx),
 		Photo:               q.Photo.WithContext(ctx),
 		Post:                q.Post.WithContext(ctx),

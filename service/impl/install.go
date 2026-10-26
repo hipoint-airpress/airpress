@@ -72,15 +72,16 @@ func (i installServiceImpl) InstallBlog(ctx context.Context, installParam param.
 		if err != nil {
 			return err
 		}
+		contentCtx := context.WithValue(txCtx, consts.AuthorizedUser, user)
 		category, err := i.createDefaultCategory(txCtx)
 		if err != nil {
 			return err
 		}
-		post, err := i.createDefaultPost(txCtx, category)
+		post, err := i.createDefaultPost(contentCtx, category)
 		if err != nil {
 			return err
 		}
-		_, err = i.createDefaultSheet(txCtx)
+		_, err = i.createDefaultSheet(contentCtx)
 		if err != nil {
 			return err
 		}
@@ -131,6 +132,7 @@ func (i installServiceImpl) createUser(ctx context.Context, user param.User) (*e
 	emailMd5 := md5.Sum([]byte(user.Email))
 	avatar := "//cn.gravatar.com/avatar/" + hex.EncodeToString(emailMd5[:]) + "?s=256&d=mm"
 	user.Avatar = avatar
+	user.Role = consts.UserRoleSuperAdmin
 	userEntity, err := i.UerService.CreateByParam(ctx, user)
 	return userEntity, err
 }

@@ -1,0 +1,1 @@
+var e={AUTHOR:`AUTHOR`,EDITOR:`EDITOR`,SUPER_ADMIN:`SUPER_ADMIN`},t=[{label:`作者`,value:e.AUTHOR},{label:`编辑`,value:e.EDITOR},{label:`超级管理员`,value:e.SUPER_ADMIN}],n={[e.AUTHOR]:`作者`,[e.EDITOR]:`编辑`,[e.SUPER_ADMIN]:`超级管理员`};export{n,t as r,e as t};

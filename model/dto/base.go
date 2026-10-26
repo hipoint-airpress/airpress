@@ -10,6 +10,7 @@ import (
 
 type BaseDTO struct {
 	Status  int         `json:"status"`
+	Code    string      `json:"code,omitempty"`
 	Message string      `json:"message"`
 	Data    interface{} `json:"data"`
 }

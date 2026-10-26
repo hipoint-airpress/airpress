@@ -424,6 +424,22 @@ func (o *optionServiceImpl) GetSheetPermalinkType(ctx context.Context) (consts.S
 	return consts.SheetPermaLinkType(value.(string)), nil
 }
 
+func (o *optionServiceImpl) GetMFAPolicy(ctx context.Context) (consts.MFAPolicy, error) {
+	p := property.MFAPolicy
+	value, err := o.getFromCacheMissFromDB(ctx, p)
+	if xerr.GetType(err) == xerr.NoRecord {
+		o.Cache.SetDefault(p.KeyValue, p.DefaultValue)
+		return consts.MFAPolicyNone, nil
+	} else if err != nil {
+		return consts.MFAPolicyNone, err
+	}
+	policy := consts.MFAPolicy(value.(string))
+	if !policy.IsValid() {
+		return consts.MFAPolicyNone, nil
+	}
+	return policy, nil
+}
+
 func (o *optionServiceImpl) GetSheetPrefix(ctx context.Context) (string, error) {
 	p := property.SheetPrefix
 	value, err := o.getFromCacheMissFromDB(ctx, p)

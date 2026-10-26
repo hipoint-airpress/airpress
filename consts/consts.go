@@ -19,6 +19,16 @@ const (
 )
 
 const (
+	LoginMaxFailures     = 5
+	LoginFailureWindow   = 15 * time.Minute
+	LoginLockDuration    = 15 * time.Minute
+	LoginIPMaxFailures   = 20
+	MFAVerifyMaxFailures = 5
+	MFAVerifyWindow      = 10 * time.Minute
+	MFALockDuration      = 10 * time.Minute
+)
+
+const (
 	AirPressBackupPrefix         = "airpress-backup-"
 	AirPressDataExportPrefix     = "airpress-data-export-"
 	AirPressBackupMarkdownPrefix = "airpress-backup-markdown-"
