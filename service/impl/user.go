@@ -56,6 +56,9 @@ func (u *userServiceImpl) UpdatePassword(ctx context.Context, oldPassword string
 	if newPassword == oldPassword {
 		return xerr.WithStatus(nil, xerr.StatusBadRequest).WithMsg("The new password and the old password cannot be the same")
 	}
+	if err := validatePasswordStrength(newPassword); err != nil {
+		return err
+	}
 	userDal := dal.GetQueryByCtx(ctx).User
 	updateResult, err := userDal.WithContext(ctx).Where(userDal.ID.Eq(user.ID)).UpdateSimple(userDal.Password.Value(u.EncryptPassword(ctx, newPassword)))
 	if err != nil {
@@ -203,8 +206,8 @@ func (u *userServiceImpl) GetByID(ctx context.Context, id int32) (*entity.User, 
 }
 
 func (u *userServiceImpl) CreateByParam(ctx context.Context, userParam param.User) (*entity.User, error) {
-	if len(userParam.Password) < 8 || len(userParam.Password) > 100 {
-		return nil, xerr.BadParam.Wrap(nil).WithMsg("password length err")
+	if err := validatePasswordStrength(userParam.Password); err != nil {
+		return nil, err
 	}
 	role := userParam.Role
 	if !role.IsValid() {

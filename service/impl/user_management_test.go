@@ -108,7 +108,7 @@ func TestUserManagementCreateUser(t *testing.T) {
 		Username: "writer",
 		Nickname: "Writer",
 		Email:    "writer@example.com",
-		Password: "password123",
+		Password: "Password123!",
 		Role:     consts.UserRoleAuthor,
 	})
 	if err != nil {
@@ -122,7 +122,7 @@ func TestUserManagementCreateUser(t *testing.T) {
 	if err := f.db.First(&stored, created.ID).Error; err != nil {
 		t.Fatalf("load created user: %v", err)
 	}
-	if stored.Password == "password123" {
+	if stored.Password == "Password123!" {
 		t.Fatal("password should be hashed")
 	}
 }
@@ -136,7 +136,7 @@ func TestUserManagementCreateRejectsDuplicateIdentity(t *testing.T) {
 		Username: "writer",
 		Nickname: "Writer",
 		Email:    "other@example.com",
-		Password: "password123",
+		Password: "Password123!",
 		Role:     consts.UserRoleAuthor,
 	})
 	if err == nil {
@@ -156,11 +156,30 @@ func TestUserManagementCreateRejectsDuplicateEmail(t *testing.T) {
 		Username: "other",
 		Nickname: "Other",
 		Email:    "writer@example.com",
-		Password: "password123",
+		Password: "Password123!",
 		Role:     consts.UserRoleAuthor,
 	})
 	if err == nil {
 		t.Fatal("duplicate email should fail")
+	}
+	if got := xerr.GetHTTPStatus(err); got != xerr.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", got, xerr.StatusBadRequest)
+	}
+}
+
+func TestUserManagementCreateRejectsWeakPassword(t *testing.T) {
+	f := setupUserManagement(t)
+	admin := f.createUser(t, "admin", consts.UserRoleSuperAdmin)
+
+	_, err := f.service.Create(actorContext(admin), param.CreateUser{
+		Username: "weak",
+		Nickname: "Weak",
+		Email:    "weak@example.com",
+		Password: "password123",
+		Role:     consts.UserRoleAuthor,
+	})
+	if err == nil {
+		t.Fatal("weak password should fail")
 	}
 	if got := xerr.GetHTTPStatus(err); got != xerr.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", got, xerr.StatusBadRequest)
@@ -366,7 +385,7 @@ func TestUserManagementResetPasswordClearsTokens(t *testing.T) {
 	f.cache.Set(cache.BuildTokenAccessKey(accessToken), author.ID, time.Hour)
 	f.cache.Set(cache.BuildAccessTokenKey(author.ID), accessToken, time.Hour)
 
-	if err := f.service.ResetPassword(actorContext(admin), author.ID, "newpassword123"); err != nil {
+	if err := f.service.ResetPassword(actorContext(admin), author.ID, "newPassword123!"); err != nil {
 		t.Fatalf("ResetPassword() error = %v", err)
 	}
 
@@ -374,7 +393,7 @@ func TestUserManagementResetPasswordClearsTokens(t *testing.T) {
 	if err := f.db.First(&stored, author.ID).Error; err != nil {
 		t.Fatalf("load user: %v", err)
 	}
-	if stored.Password == "newpassword123" {
+	if stored.Password == "newPassword123!" {
 		t.Fatal("password should be hashed")
 	}
 	if _, ok := f.cache.Get(cache.BuildTokenAccessKey(accessToken)); ok {

@@ -176,8 +176,8 @@ func (s *Server) RegisterRouters() {
 					commonThemeRouter := commonRouter.Group("themes")
 					// 编辑器的元数据字段与自定义模板都来自当前主题，只读即可。
 					commonThemeRouter.GET("/activation", s.wrapHandler(s.ThemeHandler.GetActivatedTheme))
-					commonThemeRouter.GET("activation/template/custom/sheet", s.wrapHandler(s.ThemeHandler.ListCustomSheetTemplate))
 					commonThemeRouter.GET("activation/template/custom/post", s.wrapHandler(s.ThemeHandler.ListCustomPostTemplate))
+					editorRouter.GET("themes/activation/template/custom/sheet", s.wrapHandler(s.ThemeHandler.ListCustomSheetTemplate))
 				}
 				{
 					statisticRouter := commonRouter.Group("/statistics")
@@ -185,7 +185,8 @@ func (s *Server) RegisterRouters() {
 					statisticRouter.GET("user", s.wrapHandler(s.StatisticHandler.StatisticsWithUser))
 				}
 				{
-					sheetRouter := commonRouter.Group("/sheets")
+					// 页面属于编辑及以上的功能，作者不可见。
+					sheetRouter := editorRouter.Group("/sheets")
 					sheetRouter.GET("/:sheetID", s.wrapHandler(s.SheetHandler.GetSheetByID))
 					sheetRouter.GET("", s.wrapHandler(s.SheetHandler.ListSheet))
 					sheetRouter.POST("", s.wrapHandler(s.SheetHandler.CreateSheet))
@@ -194,20 +195,18 @@ func (s *Server) RegisterRouters() {
 					sheetRouter.PUT("/:sheetID/status/draft/content", s.wrapHandler(s.SheetHandler.UpdateSheetDraft))
 					sheetRouter.DELETE("/:sheetID", s.wrapHandler(s.SheetHandler.DeleteSheet))
 					sheetRouter.GET("/preview/:sheetID", s.SheetHandler.PreviewSheet)
-					editorRouter.GET("/sheets/independent", s.wrapHandler(s.SheetHandler.IndependentSheets))
+					sheetRouter.GET("/independent", s.wrapHandler(s.SheetHandler.IndependentSheets))
 					{
-						sheetCommentRouter := commonRouter.Group("/sheets/comments")
+						sheetCommentRouter := sheetRouter.Group("/comments")
 						sheetCommentRouter.GET("", s.wrapHandler(s.SheetCommentHandler.ListSheetComment))
 						sheetCommentRouter.GET("/latest", s.wrapHandler(s.SheetCommentHandler.ListSheetCommentLatest))
 						sheetCommentRouter.GET("/:sheetID/tree_view", s.wrapHandler(s.SheetCommentHandler.ListSheetCommentAsTree))
 						sheetCommentRouter.GET("/:sheetID/list_view", s.wrapHandler(s.SheetCommentHandler.ListSheetCommentWithParent))
-
-						editorSheetCommentRouter := editorRouter.Group("/sheets/comments")
-						editorSheetCommentRouter.POST("/", s.wrapHandler(s.SheetCommentHandler.CreateSheetComment))
-						editorSheetCommentRouter.PUT("/:commentID/status/:status", s.wrapHandler(s.SheetCommentHandler.UpdateSheetCommentStatus))
-						editorSheetCommentRouter.PUT("/status/:status", s.wrapHandler(s.SheetCommentHandler.UpdateSheetCommentStatusBatch))
-						editorSheetCommentRouter.DELETE("/:commentID", s.wrapHandler(s.SheetCommentHandler.DeleteSheetComment))
-						editorSheetCommentRouter.DELETE("", s.wrapHandler(s.SheetCommentHandler.DeleteSheetCommentBatch))
+						sheetCommentRouter.POST("/", s.wrapHandler(s.SheetCommentHandler.CreateSheetComment))
+						sheetCommentRouter.PUT("/:commentID/status/:status", s.wrapHandler(s.SheetCommentHandler.UpdateSheetCommentStatus))
+						sheetCommentRouter.PUT("/status/:status", s.wrapHandler(s.SheetCommentHandler.UpdateSheetCommentStatusBatch))
+						sheetCommentRouter.DELETE("/:commentID", s.wrapHandler(s.SheetCommentHandler.DeleteSheetComment))
+						sheetCommentRouter.DELETE("", s.wrapHandler(s.SheetCommentHandler.DeleteSheetCommentBatch))
 					}
 				}
 				{

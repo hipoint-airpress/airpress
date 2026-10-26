@@ -166,8 +166,8 @@ func (s *userManagementServiceImpl) UpdateStatus(ctx context.Context, id int32, 
 }
 
 func (s *userManagementServiceImpl) ResetPassword(ctx context.Context, id int32, newPassword string) error {
-	if len(newPassword) < 8 || len(newPassword) > 100 {
-		return xerr.BadParam.New("").WithStatus(xerr.StatusBadRequest).WithMsg("密码长度必须在 8 - 100 之间")
+	if err := validatePasswordStrength(newPassword); err != nil {
+		return err
 	}
 	if _, err := s.getUser(ctx, id); err != nil {
 		return err

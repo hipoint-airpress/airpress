@@ -8,6 +8,7 @@ import (
 
 	"github.com/hipoint-airpress/airpress/consts"
 	"github.com/hipoint-airpress/airpress/handler/trans"
+	"github.com/hipoint-airpress/airpress/model/dto"
 	"github.com/hipoint-airpress/airpress/model/param"
 	"github.com/hipoint-airpress/airpress/service"
 	"github.com/hipoint-airpress/airpress/util"
@@ -273,7 +274,16 @@ func (t *ThemeHandler) GetActivatedTheme(ctx *gin.Context) (interface{}, error) 
 	if err != nil {
 		return nil, err
 	}
-	return t.ThemeService.GetThemeByID(ctx, activatedThemeID)
+	themeProperty, err := t.ThemeService.GetThemeByID(ctx, activatedThemeID)
+	if err != nil {
+		// 激活主题目录可能已被删除。文章/页面编辑器依赖该接口读取元数据字段，
+		// 这里返回一个空主题让编辑器降级运行，而不是让编辑页整体报错。
+		if xerr.GetHTTPStatus(err) == xerr.StatusBadRequest {
+			return &dto.ThemeProperty{ID: activatedThemeID}, nil
+		}
+		return nil, err
+	}
+	return themeProperty, nil
 }
 
 // GetActivatedThemeConfig godoc
