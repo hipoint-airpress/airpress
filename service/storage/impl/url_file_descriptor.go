@@ -2,6 +2,7 @@ package filestorageimpl
 
 import (
 	"net/url"
+	"path"
 	"path/filepath"
 
 	"github.com/hipoint-airpress/airpress/util/xerr"
@@ -69,9 +70,10 @@ func (f *urlFileDescriptor) getFullPath() string {
 	return fullPath
 }
 
+// getRelativePath 返回对象存储 key。用 path.Join 而不是 url.JoinPath：
+// 后者会把中文等非 ASCII 字符百分号编码，导致 OSS/MinIO 里的对象名变成编码串。
 func (f *urlFileDescriptor) getRelativePath() string {
-	relativePath, _ := url.JoinPath(f.SubPath, f.getFullName())
-	return relativePath
+	return path.Join(f.SubPath, f.getFullName())
 }
 
 func (f *urlFileDescriptor) getExtensionName() string {
@@ -80,6 +82,10 @@ func (f *urlFileDescriptor) getExtensionName() string {
 
 func (f *urlFileDescriptor) getFileName() string {
 	return f.Name
+}
+
+func (f *urlFileDescriptor) getOriginalName() string {
+	return f.OriginalName
 }
 
 func (f *urlFileDescriptor) setFileName(name string) {
