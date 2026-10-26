@@ -19,11 +19,11 @@ const (
 )
 
 const (
-	LoginMaxFailures     = 5
+	LoginMaxFailures     = 3
 	LoginFailureWindow   = 15 * time.Minute
 	LoginLockDuration    = 15 * time.Minute
-	LoginIPMaxFailures   = 20
-	MFAVerifyMaxFailures = 5
+	LoginIPMaxFailures   = 10
+	MFAVerifyMaxFailures = 3
 	MFAVerifyWindow      = 10 * time.Minute
 	MFALockDuration      = 10 * time.Minute
 )
