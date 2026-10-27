@@ -599,10 +599,13 @@ func (b basePostServiceImpl) UpdateDraftContent(ctx context.Context, postID int3
 				return xerr.NoType.New("").WithMsg("update post content failed")
 			}
 		}
-		current.OriginalContent = content
-		if err := syncPostAttachments(ctx, tx, current); err != nil {
+		updated := *current
+		updated.OriginalContent = originalContent
+		updated.FormatContent = content
+		if err := syncPostAttachments(ctx, tx, &updated); err != nil {
 			return err
 		}
+		current.OriginalContent = content
 		post = current
 		return nil
 	})

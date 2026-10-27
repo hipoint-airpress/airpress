@@ -179,3 +179,41 @@ func TestUpdateDraftContentSyncsPostAttachment(t *testing.T) {
 		t.Fatalf("relations = %d, want 1", count)
 	}
 }
+
+func TestUpdateDraftContentMatchesOriginalContent(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	author := createPostAttachmentAuthor(t, db, "author")
+
+	image := &entity.Attachment{Name: "img", Path: "upload/image/2026/10/a.png", UserID: author.ID}
+	if err := db.Create(image).Error; err != nil {
+		t.Fatalf("create attachment: %v", err)
+	}
+
+	post := &entity.Post{
+		Title:    "post",
+		Slug:     "post",
+		Type:     consts.PostTypePost,
+		Status:   consts.PostStatusDraft,
+		AuthorID: author.ID,
+	}
+	if err := db.Create(post).Error; err != nil {
+		t.Fatalf("create post: %v", err)
+	}
+
+	ctx := postActorContext(author)
+	// 只出现在 Markdown 原文、未出现在渲染结果中的附件也必须建立关联。
+	if _, err := (basePostServiceImpl{}).UpdateDraftContent(ctx, post.ID,
+		"<p>no image</p>", "![x](upload/image/2026/10/a.png)"); err != nil {
+		t.Fatalf("UpdateDraftContent() error = %v", err)
+	}
+
+	var count int64
+	if err := db.Model(&entity.PostAttachment{}).
+		Where("post_id = ? AND attachment_id = ?", post.ID, image.ID).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count relations: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("relations = %d, want 1", count)
+	}
+}
