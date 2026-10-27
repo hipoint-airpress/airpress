@@ -36,3 +36,8 @@ type PostDetail struct {
 	Content         string `json:"content"`
 	CommentCount    int64  `json:"commentCount"`
 }
+
+type TransferPostAuthorResult struct {
+	PostCount       int64 `json:"postCount"`
+	AttachmentCount int64 `json:"attachmentCount"`
+}

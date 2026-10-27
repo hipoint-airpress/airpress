@@ -15,6 +15,7 @@ import (
 	"github.com/hipoint-airpress/airpress/consts"
 	"github.com/hipoint-airpress/airpress/dal"
 	"github.com/hipoint-airpress/airpress/event"
+	"github.com/hipoint-airpress/airpress/model/dto"
 	"github.com/hipoint-airpress/airpress/model/entity"
 	"github.com/hipoint-airpress/airpress/model/param"
 	"github.com/hipoint-airpress/airpress/model/property"
@@ -330,4 +331,112 @@ func (p postServiceImpl) GetNextPosts(ctx context.Context, post *entity.Post, si
 		return nil, WrapDBErr(err)
 	}
 	return posts, nil
+}
+
+const maxTransferPostCount = 100
+
+func (p postServiceImpl) TransferAuthor(ctx context.Context, postIDs []int32, authorID int32) (*dto.TransferPostAuthorResult, error) {
+	actor, ok := currentUser(ctx)
+	if !ok || (actor.Role != consts.UserRoleEditor && actor.Role != consts.UserRoleSuperAdmin) {
+		return nil, xerr.WithStatus(nil, xerr.StatusForbidden).WithMsg("无权转交文章")
+	}
+	if authorID <= 0 {
+		return nil, xerr.BadParam.New("").WithStatus(xerr.StatusBadRequest).WithMsg("目标作者参数错误")
+	}
+
+	uniqueIDs := make([]int32, 0, len(postIDs))
+	seen := make(map[int32]struct{}, len(postIDs))
+	for _, postID := range postIDs {
+		if postID <= 0 {
+			continue
+		}
+		if _, exists := seen[postID]; exists {
+			continue
+		}
+		seen[postID] = struct{}{}
+		uniqueIDs = append(uniqueIDs, postID)
+	}
+	if len(uniqueIDs) == 0 {
+		return nil, xerr.BadParam.New("").WithStatus(xerr.StatusBadRequest).WithMsg("请选择文章")
+	}
+	if len(uniqueIDs) > maxTransferPostCount {
+		return nil, xerr.BadParam.New("").WithStatus(xerr.StatusBadRequest).WithMsg("单次最多转交 100 篇文章")
+	}
+
+	userDAL := dal.GetQueryByCtx(ctx).User
+	target, err := userDAL.WithContext(ctx).Where(userDAL.ID.Eq(authorID)).Take()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, xerr.BadParam.New("").WithStatus(xerr.StatusBadRequest).WithMsg("目标作者不存在")
+		}
+		return nil, WrapDBErr(err)
+	}
+	if target.Disabled {
+		return nil, xerr.BadParam.New("").WithStatus(xerr.StatusBadRequest).WithMsg("目标作者已被禁用")
+	}
+
+	postDAL := dal.GetQueryByCtx(ctx).Post
+	posts, err := postDAL.WithContext(ctx).
+		Where(postDAL.ID.In(uniqueIDs...), postDAL.Type.Eq(consts.PostTypePost)).
+		Find()
+	if err != nil {
+		return nil, WrapDBErr(err)
+	}
+	if len(posts) == 0 {
+		return nil, xerr.BadParam.New("").WithStatus(xerr.StatusBadRequest).WithMsg("没有可转交的文章")
+	}
+
+	postIDsToUpdate := make([]int32, 0, len(posts))
+	authorIDs := make([]int32, 0, len(posts))
+	seenAuthor := make(map[int32]struct{}, len(posts))
+	for _, post := range posts {
+		postIDsToUpdate = append(postIDsToUpdate, post.ID)
+		if _, exists := seenAuthor[post.AuthorID]; exists {
+			continue
+		}
+		seenAuthor[post.AuthorID] = struct{}{}
+		authorIDs = append(authorIDs, post.AuthorID)
+	}
+
+	attachmentCount := int64(0)
+	err = dal.GetQueryByCtx(ctx).Transaction(func(tx *dal.Query) error {
+		postAttachmentDAL := tx.PostAttachment
+		relations, err := postAttachmentDAL.WithContext(ctx).Where(postAttachmentDAL.PostID.In(postIDsToUpdate...)).Find()
+		if err != nil {
+			return WrapDBErr(err)
+		}
+		attachmentIDs := make([]int32, 0, len(relations))
+		seenAttachment := make(map[int32]struct{}, len(relations))
+		for _, relation := range relations {
+			if _, exists := seenAttachment[relation.AttachmentID]; exists {
+				continue
+			}
+			seenAttachment[relation.AttachmentID] = struct{}{}
+			attachmentIDs = append(attachmentIDs, relation.AttachmentID)
+		}
+
+		if _, err := tx.Post.WithContext(ctx).Where(tx.Post.ID.In(postIDsToUpdate...)).
+			UpdateSimple(tx.Post.AuthorID.Value(authorID)); err != nil {
+			return WrapDBErr(err)
+		}
+		if len(attachmentIDs) == 0 {
+			return nil
+		}
+		updateResult, err := tx.Attachment.WithContext(ctx).
+			Where(tx.Attachment.ID.In(attachmentIDs...), tx.Attachment.UserID.In(authorIDs...)).
+			UpdateSimple(tx.Attachment.UserID.Value(authorID))
+		if err != nil {
+			return WrapDBErr(err)
+		}
+		attachmentCount = updateResult.RowsAffected
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &dto.TransferPostAuthorResult{
+		PostCount:       int64(len(postIDsToUpdate)),
+		AttachmentCount: attachmentCount,
+	}, nil
 }

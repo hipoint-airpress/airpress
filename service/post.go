@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/hipoint-airpress/airpress/consts"
+	"github.com/hipoint-airpress/airpress/model/dto"
 	"github.com/hipoint-airpress/airpress/model/entity"
 	"github.com/hipoint-airpress/airpress/model/param"
 )
@@ -20,4 +21,5 @@ type PostService interface {
 	CountVisit(ctx context.Context) (int64, error)
 	Preview(ctx context.Context, postID int32) (string, error)
 	CountLike(ctx context.Context) (int64, error)
+	TransferAuthor(ctx context.Context, postIDs []int32, authorID int32) (*dto.TransferPostAuthorResult, error)
 }
