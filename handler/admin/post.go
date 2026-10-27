@@ -353,3 +353,23 @@ func (p *PostHandler) PreviewPost(ctx *gin.Context) {
 	}
 	ctx.String(http.StatusOK, previewPath)
 }
+
+// TransferPostAuthor godoc
+// @Summary      批量转交文章作者
+// @Description  将选中的文章及其关联附件转交给指定作者
+// @Tags         Admin.Post
+// @Accept       json
+// @Produce      json
+// @Param        payload  body      param.TransferPostAuthor  true  "转交参数"
+// @Security     AdminApiKey
+// @Success      200  {object}  dto.BaseDTO{data=dto.TransferPostAuthorResult}
+// @Failure      400  {object}  dto.BaseDTO
+// @Failure      403  {object}  dto.BaseDTO
+// @Router       /admin/posts/author [put]
+func (p *PostHandler) TransferPostAuthor(ctx *gin.Context) (interface{}, error) {
+	transferParam := param.TransferPostAuthor{}
+	if err := ctx.ShouldBindJSON(&transferParam); err != nil {
+		return nil, xerr.WithStatus(err, xerr.StatusBadRequest).WithMsg("parameter error")
+	}
+	return p.PostService.TransferAuthor(ctx, transferParam.PostIDs, transferParam.AuthorID)
+}

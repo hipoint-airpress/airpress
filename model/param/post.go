@@ -40,3 +40,8 @@ type PostQuery struct {
 	TagID        *int32               `json:"tagId" form:"tagId"`
 	WithPassword *bool                `json:"-" form:"-"`
 }
+
+type TransferPostAuthor struct {
+	PostIDs  []int32 `json:"postIds"`
+	AuthorID int32   `json:"authorId"`
+}

@@ -139,6 +139,9 @@ func (s *Server) RegisterRouters() {
 					postRouter.DELETE("/:postID", s.wrapHandler(s.PostHandler.DeletePost))
 					postRouter.DELETE("", s.wrapHandler(s.PostHandler.DeletePostBatch))
 					postRouter.GET("/:postID/preview", s.PostHandler.PreviewPost)
+
+					editorPostRouter := editorRouter.Group("/posts")
+					editorPostRouter.PUT("/author", s.wrapHandler(s.PostHandler.TransferPostAuthor))
 					{
 						postCommentRouter := commonRouter.Group("/posts/comments")
 						postCommentRouter.GET("", s.wrapHandler(s.PostCommentHandler.ListPostComment))
@@ -284,6 +287,9 @@ func (s *Server) RegisterRouters() {
 					userRouter.PUT("/mfa/update", s.wrapHandler(s.UserHandler.UpdateMFA))
 					userRouter.GET("/mfa/recovery-codes", s.wrapHandler(s.UserHandler.GetRecoveryCodeCount))
 					userRouter.POST("/mfa/recovery-codes", s.wrapHandler(s.UserHandler.GenerateRecoveryCodes))
+
+					editorUserRouter := editorRouter.Group("/users")
+					editorUserRouter.GET("/selectable", s.wrapHandler(s.UserManagementHandler.ListSelectableUsers))
 				}
 				{
 					manageRouter := superAdminRouter.Group("/manage")

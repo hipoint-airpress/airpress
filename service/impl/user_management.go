@@ -268,6 +268,24 @@ func (s *userManagementServiceImpl) SaveMFAPolicy(ctx context.Context, policy co
 	return s.OptionService.Save(ctx, map[string]string{property.MFAPolicy.KeyValue: string(policy)})
 }
 
+func (s *userManagementServiceImpl) ListSelectable(ctx context.Context) ([]*dto.SelectableUser, error) {
+	userDAL := dal.GetQueryByCtx(ctx).User
+	users, err := userDAL.WithContext(ctx).Where(userDAL.Disabled.Eq(false)).Order(userDAL.ID).Find()
+	if err != nil {
+		return nil, WrapDBErr(err)
+	}
+	result := make([]*dto.SelectableUser, 0, len(users))
+	for _, user := range users {
+		result = append(result, &dto.SelectableUser{
+			ID:       user.ID,
+			Username: user.Username,
+			Nickname: user.Nickname,
+			Role:     user.Role,
+		})
+	}
+	return result, nil
+}
+
 func (s *userManagementServiceImpl) getUser(ctx context.Context, id int32) (*entity.User, error) {
 	userDAL := dal.GetQueryByCtx(ctx).User
 	user, err := userDAL.WithContext(ctx).Where(userDAL.ID.Eq(id)).First()

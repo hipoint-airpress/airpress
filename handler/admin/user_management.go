@@ -154,3 +154,16 @@ func (h *UserManagementHandler) SaveMFAPolicy(ctx *gin.Context) (interface{}, er
 	}
 	return nil, h.UserManagementService.SaveMFAPolicy(ctx, policyParam.Policy)
 }
+
+// ListSelectableUsers godoc
+// @Summary      查询可选择的用户
+// @Description  返回未禁用用户的精简信息，供编辑角色选择文章目标作者
+// @Tags         Admin.UserManagement
+// @Produce      json
+// @Security     AdminApiKey
+// @Success      200  {object}  dto.BaseDTO{data=[]dto.SelectableUser}
+// @Failure      403  {object}  dto.BaseDTO
+// @Router       /admin/users/selectable [get]
+func (h *UserManagementHandler) ListSelectableUsers(ctx *gin.Context) (interface{}, error) {
+	return h.UserManagementService.ListSelectable(ctx)
+}

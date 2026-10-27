@@ -20,4 +20,5 @@ type UserManagementService interface {
 	Delete(ctx context.Context, id int32, transferToID int32) (*dto.UserContentCount, error)
 	GetMFAPolicy(ctx context.Context) (consts.MFAPolicy, error)
 	SaveMFAPolicy(ctx context.Context, policy consts.MFAPolicy) error
+	ListSelectable(ctx context.Context) ([]*dto.SelectableUser, error)
 }
