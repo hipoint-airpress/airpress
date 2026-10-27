@@ -223,3 +223,15 @@ func (m *Meta) BeforeUpdate(tx *gorm.DB) (err error) {
 	tx.Statement.SetColumn("update_time", time.Now())
 	return nil
 }
+
+// ------------------- PostAttachment -------------------
+
+func (m *PostAttachment) BeforeCreate(tx *gorm.DB) (err error) {
+	m.CreateTime = time.Now()
+	return nil
+}
+
+func (m *PostAttachment) BeforeUpdate(tx *gorm.DB) (err error) {
+	tx.Statement.SetColumn("update_time", time.Now())
+	return nil
+}

@@ -5,6 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
+	airpressLog "github.com/hipoint-airpress/airpress/log"
 	"github.com/hipoint-airpress/airpress/model/entity"
 )
 
@@ -29,6 +30,7 @@ func migratePostAttachment(db *gorm.DB) error {
 		if err := backfillPostAttachmentBatch(db, posts); err != nil {
 			return err
 		}
+		airpressLog.Infof("post attachment backfill: processed posts up to id %d", lastID)
 	}
 }
 
