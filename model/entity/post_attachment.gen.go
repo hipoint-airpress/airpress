@@ -12,7 +12,7 @@ const TableNamePostAttachment = "post_attachment"
 
 // PostAttachment mapped from table <post_attachment>
 type PostAttachment struct {
-	ID           *int32     `gorm:"column:id;type:integer;primaryKey" json:"id"`
+	ID           int32      `gorm:"column:id;type:int;primaryKey;autoIncrement:true" json:"id"`
 	CreateTime   time.Time  `gorm:"column:create_time;type:datetime;not null" json:"create_time"`
 	UpdateTime   *time.Time `gorm:"column:update_time;type:datetime" json:"update_time"`
 	PostID       int32      `gorm:"column:post_id;type:int;not null;uniqueIndex:uniq_post_attachment,priority:1" json:"post_id"`
