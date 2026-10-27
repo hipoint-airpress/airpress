@@ -264,6 +264,11 @@ func (b basePostServiceImpl) Delete(ctx context.Context, postID int32) error {
 		if err != nil {
 			return WrapDBErr(err)
 		}
+		postAttachmentDAL := tx.PostAttachment
+		_, err = postAttachmentDAL.WithContext(ctx).Where(postAttachmentDAL.PostID.Eq(postID)).Delete()
+		if err != nil {
+			return WrapDBErr(err)
+		}
 		return nil
 	})
 	return err
@@ -340,6 +345,11 @@ func (b basePostServiceImpl) DeleteBatch(ctx context.Context, postIDs []int32) e
 			return WrapDBErr(err)
 		}
 		_, err = postCommentDAL.WithContext(ctx).Where(postCommentDAL.PostID.In(uniqueIDs...)).Delete()
+		if err != nil {
+			return WrapDBErr(err)
+		}
+		postAttachmentDAL := tx.PostAttachment
+		_, err = postAttachmentDAL.WithContext(ctx).Where(postAttachmentDAL.PostID.In(uniqueIDs...)).Delete()
 		if err != nil {
 			return WrapDBErr(err)
 		}

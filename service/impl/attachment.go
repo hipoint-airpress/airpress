@@ -204,13 +204,25 @@ func (a *attachmentServiceImpl) Delete(ctx context.Context, attachmentID int32) 
 	if err != nil {
 		return nil, WrapDBErr(err)
 	}
-	result, err := attachmentDAL.WithContext(ctx).Where(attachmentDAL.ID.Eq(attachmentID)).Delete()
-	if err != nil || result.RowsAffected != 1 {
-		return nil, xerr.WithMsg(err, "delete file failed")
+	err = dal.GetQueryByCtx(ctx).Transaction(func(tx *dal.Query) error {
+		postAttachmentDAL := tx.PostAttachment
+		if _, err := postAttachmentDAL.WithContext(ctx).Where(postAttachmentDAL.AttachmentID.Eq(attachmentID)).Delete(); err != nil {
+			return WrapDBErr(err)
+		}
+		result, err := tx.Attachment.WithContext(ctx).Where(tx.Attachment.ID.Eq(attachmentID)).Delete()
+		if err != nil {
+			return WrapDBErr(err)
+		}
+		if result.RowsAffected != 1 {
+			return xerr.NoType.New("").WithMsg("delete file failed")
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	fileStorage := a.FileStorageComposite.GetFileStorage(attachment.Type)
-	err = fileStorage.Delete(ctx, attachment.FileKey)
-	if err != nil {
+	if err := fileStorage.Delete(ctx, attachment.FileKey); err != nil {
 		return nil, xerr.WithMsg(err, "delete file failed")
 	}
 	return attachment, nil

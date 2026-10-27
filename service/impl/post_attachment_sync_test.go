@@ -32,7 +32,7 @@ func setupPostAttachmentDB(t *testing.T) *gorm.DB {
 	}
 	sqlDB.SetMaxOpenConns(1)
 	if err := db.AutoMigrate(&entity.User{}, &entity.Post{}, &entity.Attachment{}, &entity.PostAttachment{},
-		&entity.PostCategory{}, &entity.PostTag{}, &entity.Meta{}); err != nil {
+		&entity.PostCategory{}, &entity.PostTag{}, &entity.Meta{}, &entity.Comment{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 	prev := *dal.Q
@@ -177,6 +177,61 @@ func TestUpdateDraftContentSyncsPostAttachment(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("relations = %d, want 1", count)
+	}
+}
+
+func TestDeletePostCleansPostAttachment(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	author := createPostAttachmentAuthor(t, db, "author")
+
+	post := &entity.Post{Title: "post", Slug: "post", Type: consts.PostTypePost, AuthorID: author.ID}
+	if err := db.Create(post).Error; err != nil {
+		t.Fatalf("create post: %v", err)
+	}
+	relation := &entity.PostAttachment{PostID: post.ID, AttachmentID: 99}
+	if err := db.Create(relation).Error; err != nil {
+		t.Fatalf("create relation: %v", err)
+	}
+
+	ctx := postActorContext(author)
+	if err := (basePostServiceImpl{}).Delete(ctx, post.ID); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+
+	var count int64
+	if err := db.Model(&entity.PostAttachment{}).Where("post_id = ?", post.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count relations: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("relations = %d, want 0", count)
+	}
+}
+
+func TestDeleteAttachmentCleansPostAttachment(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+
+	attachment := &entity.Attachment{Name: "img", Path: "upload/image/2026/10/a.png", UserID: 1, FileKey: "k"}
+	if err := db.Create(attachment).Error; err != nil {
+		t.Fatalf("create attachment: %v", err)
+	}
+	relation := &entity.PostAttachment{PostID: 1, AttachmentID: attachment.ID}
+	if err := db.Create(relation).Error; err != nil {
+		t.Fatalf("create relation: %v", err)
+	}
+
+	svc := &attachmentServiceImpl{
+		FileStorageComposite: &stubStorageComposite{storage: &stubFileStorage{}},
+	}
+	if _, err := svc.Delete(context.Background(), attachment.ID); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+
+	var count int64
+	if err := db.Model(&entity.PostAttachment{}).Where("attachment_id = ?", attachment.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count relations: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("relations = %d, want 0", count)
 	}
 }
 
