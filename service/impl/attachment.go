@@ -210,11 +210,8 @@ func (a *attachmentServiceImpl) Delete(ctx context.Context, attachmentID int32) 
 			return WrapDBErr(err)
 		}
 		result, err := tx.Attachment.WithContext(ctx).Where(tx.Attachment.ID.Eq(attachmentID)).Delete()
-		if err != nil {
-			return WrapDBErr(err)
-		}
-		if result.RowsAffected != 1 {
-			return xerr.NoType.New("").WithMsg("delete file failed")
+		if err != nil || result.RowsAffected != 1 {
+			return xerr.WithMsg(err, "delete file failed")
 		}
 		return nil
 	})
