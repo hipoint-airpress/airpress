@@ -207,6 +207,47 @@ func TestDeletePostCleansPostAttachment(t *testing.T) {
 	}
 }
 
+func TestDeletePostBatchCleansPostAttachment(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	author := createPostAttachmentAuthor(t, db, "author")
+
+	first := &entity.Post{Title: "first", Slug: "first", Type: consts.PostTypePost, AuthorID: author.ID}
+	second := &entity.Post{Title: "second", Slug: "second", Type: consts.PostTypePost, AuthorID: author.ID}
+	if err := db.Create(first).Error; err != nil {
+		t.Fatalf("create first post: %v", err)
+	}
+	if err := db.Create(second).Error; err != nil {
+		t.Fatalf("create second post: %v", err)
+	}
+	relations := []*entity.PostAttachment{
+		{PostID: first.ID, AttachmentID: 91},
+		{PostID: second.ID, AttachmentID: 92},
+	}
+	if err := db.Create(&relations).Error; err != nil {
+		t.Fatalf("create relations: %v", err)
+	}
+
+	postIDs := []int32{first.ID, second.ID}
+	if err := (basePostServiceImpl{}).DeleteBatch(postActorContext(author), postIDs); err != nil {
+		t.Fatalf("DeleteBatch() error = %v", err)
+	}
+
+	var postCount int64
+	if err := db.Model(&entity.Post{}).Where("id IN ?", postIDs).Count(&postCount).Error; err != nil {
+		t.Fatalf("count posts: %v", err)
+	}
+	if postCount != 0 {
+		t.Fatalf("posts = %d, want 0", postCount)
+	}
+	var relationCount int64
+	if err := db.Model(&entity.PostAttachment{}).Where("post_id IN ?", postIDs).Count(&relationCount).Error; err != nil {
+		t.Fatalf("count relations: %v", err)
+	}
+	if relationCount != 0 {
+		t.Fatalf("relations = %d, want 0", relationCount)
+	}
+}
+
 func TestDeleteAttachmentCleansPostAttachment(t *testing.T) {
 	db := setupPostAttachmentDB(t)
 

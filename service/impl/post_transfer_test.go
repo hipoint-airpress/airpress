@@ -261,3 +261,36 @@ func TestTransferAuthorTransfersPostsButSkipsSheets(t *testing.T) {
 		t.Fatalf("post author = %d, want %d", storedPost.AuthorID, target.ID)
 	}
 }
+
+func TestTransferAuthorRejectsInvalidParams(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	editor := createTransferUser(t, db, "editor", consts.UserRoleEditor)
+	missingTargetID := editor.ID + 10000
+
+	tooManyIDs := make([]int32, maxTransferPostCount+1)
+	for i := range tooManyIDs {
+		tooManyIDs[i] = int32(i + 1)
+	}
+
+	tests := []struct {
+		name     string
+		postIDs  []int32
+		authorID int32
+	}{
+		{name: "empty post ids", postIDs: []int32{}, authorID: editor.ID},
+		{name: "too many post ids", postIDs: tooManyIDs, authorID: editor.ID},
+		{name: "only non-positive post ids", postIDs: []int32{0, -1}, authorID: editor.ID},
+		{name: "target user not found", postIDs: []int32{1}, authorID: missingTargetID},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := (postServiceImpl{}).TransferAuthor(postActorContext(editor), tt.postIDs, tt.authorID)
+			if err == nil {
+				t.Fatal("TransferAuthor() error = nil, want bad request")
+			}
+			if got := xerr.GetHTTPStatus(err); got != xerr.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", got, xerr.StatusBadRequest)
+			}
+		})
+	}
+}
