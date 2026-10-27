@@ -1,9 +1,11 @@
 package dal
 
 import (
+	"fmt"
 	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	airpressLog "github.com/hipoint-airpress/airpress/log"
 	"github.com/hipoint-airpress/airpress/model/entity"
@@ -14,6 +16,7 @@ const postAttachmentMigrateBatchSize = 100
 // migratePostAttachment 为历史文章建立附件关联，只在 post_attachment 表首次创建后执行一次。
 func migratePostAttachment(db *gorm.DB) error {
 	var lastID int32
+	processed := 0
 	for {
 		posts := make([]entity.Post, 0, postAttachmentMigrateBatchSize)
 		if err := db.Select("id", "author_id", "original_content", "format_content", "thumbnail").
@@ -24,12 +27,14 @@ func migratePostAttachment(db *gorm.DB) error {
 			return err
 		}
 		if len(posts) == 0 {
+			airpressLog.Infof("post attachment backfill finished: processed %d posts", processed)
 			return nil
 		}
 		lastID = posts[len(posts)-1].ID
 		if err := backfillPostAttachmentBatch(db, posts); err != nil {
-			return err
+			return fmt.Errorf("backfill post attachment up to post %d: %w", lastID, err)
 		}
+		processed += len(posts)
 		airpressLog.Infof("post attachment backfill: processed posts up to id %d", lastID)
 	}
 }
@@ -72,5 +77,5 @@ func backfillPostAttachmentBatch(db *gorm.DB, posts []entity.Post) error {
 	if len(records) == 0 {
 		return nil
 	}
-	return db.CreateInBatches(records, 500).Error
+	return db.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(records, 500).Error
 }

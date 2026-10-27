@@ -107,7 +107,7 @@ func dbMigrate() {
 	// 关联表首次创建时回填历史文章，之后启动不再重复扫描。
 	if !hasPostAttachment {
 		if err := migratePostAttachment(db); err != nil {
-			airpressLog.Fatal("failed to migrate post attachment", zap.Error(err))
+			airpressLog.Fatal("failed to migrate post attachment; drop table post_attachment and restart to retry", zap.Error(err))
 		}
 	}
 }
