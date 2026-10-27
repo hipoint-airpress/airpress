@@ -52,6 +52,7 @@ func main() {
 		g.GenerateModel("option", gen.FieldType("type", "consts.OptionType")),
 		g.GenerateModel("photo"),
 		g.GenerateModel("post", gen.FieldType("type", "consts.PostType"), gen.FieldType("status", "consts.PostStatus"), gen.FieldType("editor_type", "consts.EditorType")),
+		g.GenerateModel("post_attachment"),
 		g.GenerateModel("post_category"),
 		g.GenerateModel("post_tag"),
 		g.GenerateModel("tag"),

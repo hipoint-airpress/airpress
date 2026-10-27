@@ -29,6 +29,7 @@ var (
 	Option              *option
 	Photo               *photo
 	Post                *post
+	PostAttachment      *postAttachment
 	PostCategory        *postCategory
 	PostTag             *postTag
 	Tag                 *tag
@@ -52,6 +53,7 @@ func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 	Option = &Q.Option
 	Photo = &Q.Photo
 	Post = &Q.Post
+	PostAttachment = &Q.PostAttachment
 	PostCategory = &Q.PostCategory
 	PostTag = &Q.PostTag
 	Tag = &Q.Tag
@@ -76,6 +78,7 @@ func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
 		Option:              newOption(db, opts...),
 		Photo:               newPhoto(db, opts...),
 		Post:                newPost(db, opts...),
+		PostAttachment:      newPostAttachment(db, opts...),
 		PostCategory:        newPostCategory(db, opts...),
 		PostTag:             newPostTag(db, opts...),
 		Tag:                 newTag(db, opts...),
@@ -101,6 +104,7 @@ type Query struct {
 	Option              option
 	Photo               photo
 	Post                post
+	PostAttachment      postAttachment
 	PostCategory        postCategory
 	PostTag             postTag
 	Tag                 tag
@@ -127,6 +131,7 @@ func (q *Query) clone(db *gorm.DB) *Query {
 		Option:              q.Option.clone(db),
 		Photo:               q.Photo.clone(db),
 		Post:                q.Post.clone(db),
+		PostAttachment:      q.PostAttachment.clone(db),
 		PostCategory:        q.PostCategory.clone(db),
 		PostTag:             q.PostTag.clone(db),
 		Tag:                 q.Tag.clone(db),
@@ -160,6 +165,7 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 		Option:              q.Option.replaceDB(db),
 		Photo:               q.Photo.replaceDB(db),
 		Post:                q.Post.replaceDB(db),
+		PostAttachment:      q.PostAttachment.replaceDB(db),
 		PostCategory:        q.PostCategory.replaceDB(db),
 		PostTag:             q.PostTag.replaceDB(db),
 		Tag:                 q.Tag.replaceDB(db),
@@ -183,6 +189,7 @@ type queryCtx struct {
 	Option              *optionDo
 	Photo               *photoDo
 	Post                *postDo
+	PostAttachment      *postAttachmentDo
 	PostCategory        *postCategoryDo
 	PostTag             *postTagDo
 	Tag                 *tagDo
@@ -206,6 +213,7 @@ func (q *Query) WithContext(ctx context.Context) *queryCtx {
 		Option:              q.Option.WithContext(ctx),
 		Photo:               q.Photo.WithContext(ctx),
 		Post:                q.Post.WithContext(ctx),
+		PostAttachment:      q.PostAttachment.WithContext(ctx),
 		PostCategory:        q.PostCategory.WithContext(ctx),
 		PostTag:             q.PostTag.WithContext(ctx),
 		Tag:                 q.Tag.WithContext(ctx),

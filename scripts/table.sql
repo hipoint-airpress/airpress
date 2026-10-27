@@ -253,6 +253,18 @@ create table if not exists post
 ) ENGINE = INNODB
   DEFAULT charset = utf8mb4;
 
+create table if not exists post_attachment
+(
+    id            int auto_increment primary key,
+    create_time   datetime(6) not null,
+    update_time   datetime(6) null,
+    post_id       int         not null,
+    attachment_id int         not null,
+    unique index uniq_post_attachment (post_id, attachment_id),
+    index post_attachment_attachment_id (attachment_id)
+) ENGINE = INNODB
+  DEFAULT charset = utf8mb4;
+
 create table if not exists tag
 (
     id          int auto_increment primary key,
