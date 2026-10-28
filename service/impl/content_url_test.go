@@ -50,6 +50,71 @@ func TestPostConvertParamNormalizesContent(t *testing.T) {
 	}
 }
 
+func TestUpdateDraftContentNormalizesContent(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	author := createPostAttachmentAuthor(t, db, "author")
+	if err := db.Create(&entity.Attachment{
+		Name: "a", Path: "upload/img/a.png", FileKey: "upload/img/a.png", Type: consts.AttachmentTypeLocal, UserID: author.ID,
+	}).Error; err != nil {
+		t.Fatalf("create attachment: %v", err)
+	}
+	post := &entity.Post{
+		Title:           "post",
+		Slug:            "post",
+		Type:            consts.PostTypePost,
+		AuthorID:        author.ID,
+		OriginalContent: "old",
+		FormatContent:   "old",
+	}
+	if err := db.Create(post).Error; err != nil {
+		t.Fatalf("create post: %v", err)
+	}
+
+	svc := basePostServiceImpl{ContentURLService: NewContentURLService(nil)}
+	if _, err := svc.UpdateDraftContent(postActorContext(author), post.ID,
+		`<img src="https://blog.example.com/upload/img/a.png">`,
+		"![a](https://blog.example.com/upload/img/a.png)"); err != nil {
+		t.Fatalf("UpdateDraftContent() error = %v", err)
+	}
+
+	var stored entity.Post
+	if err := db.First(&stored, post.ID).Error; err != nil {
+		t.Fatalf("load post: %v", err)
+	}
+	if stored.OriginalContent != "![a](upload/img/a.png)" {
+		t.Fatalf("stored OriginalContent = %q", stored.OriginalContent)
+	}
+	if stored.FormatContent != `<img src="upload/img/a.png">` {
+		t.Fatalf("stored FormatContent = %q", stored.FormatContent)
+	}
+}
+
+func TestSheetConvertParamNormalizesContent(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	if err := db.Create(&entity.Attachment{
+		Name: "a", Path: "upload/img/a.png", FileKey: "upload/img/a.png", Type: consts.AttachmentTypeLocal,
+	}).Error; err != nil {
+		t.Fatalf("create attachment: %v", err)
+	}
+
+	editorType := consts.EditorTypeMarkdown
+	svc := sheetServiceImpl{ContentURLService: NewContentURLService(nil)}
+	sheet, err := svc.ConvertParam(context.Background(), &param.Sheet{
+		Title:           "s",
+		EditorType:      &editorType,
+		OriginalContent: "![a](https://blog.example.com/upload/img/a.png)",
+	})
+	if err != nil {
+		t.Fatalf("ConvertParam() error = %v", err)
+	}
+	if sheet.OriginalContent != "![a](upload/img/a.png)" {
+		t.Fatalf("OriginalContent = %q, want relative path", sheet.OriginalContent)
+	}
+	if !strings.Contains(sheet.FormatContent, "upload/img/a.png") || strings.Contains(sheet.FormatContent, "blog.example.com") {
+		t.Fatalf("FormatContent = %q, want relative path only", sheet.FormatContent)
+	}
+}
+
 func TestJournalServiceCreateNormalizesContent(t *testing.T) {
 	db := setupPostAttachmentDB(t)
 	if err := db.AutoMigrate(&entity.Journal{}); err != nil {
@@ -74,6 +139,48 @@ func TestJournalServiceCreateNormalizesContent(t *testing.T) {
 	}
 	if journal.Content != `<img src="upload/img/a.png">` {
 		t.Fatalf("Content = %q", journal.Content)
+	}
+}
+
+func TestJournalServiceUpdateNormalizesContent(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	if err := db.AutoMigrate(&entity.Journal{}); err != nil {
+		t.Fatalf("auto migrate journal: %v", err)
+	}
+	if err := db.Create(&entity.Attachment{
+		Name: "a", Path: "upload/img/a.png", FileKey: "upload/img/a.png", Type: consts.AttachmentTypeLocal,
+	}).Error; err != nil {
+		t.Fatalf("create attachment: %v", err)
+	}
+	journal := &entity.Journal{SourceContent: "old", Content: "old"}
+	if err := db.Create(journal).Error; err != nil {
+		t.Fatalf("create journal: %v", err)
+	}
+
+	svc := &journalServiceImpl{ContentURLService: NewContentURLService(nil)}
+	updated, err := svc.Update(context.Background(), journal.ID, &param.Journal{
+		SourceContent: "![a](https://blog.example.com/upload/img/a.png)",
+		Content:       `<img src="https://blog.example.com/upload/img/a.png">`,
+	})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if updated.SourceContent != "![a](upload/img/a.png)" {
+		t.Fatalf("updated SourceContent = %q", updated.SourceContent)
+	}
+	if updated.Content != `<img src="upload/img/a.png">` {
+		t.Fatalf("updated Content = %q", updated.Content)
+	}
+
+	var stored entity.Journal
+	if err := db.First(&stored, journal.ID).Error; err != nil {
+		t.Fatalf("load journal: %v", err)
+	}
+	if stored.SourceContent != "![a](upload/img/a.png)" {
+		t.Fatalf("stored SourceContent = %q", stored.SourceContent)
+	}
+	if stored.Content != `<img src="upload/img/a.png">` {
+		t.Fatalf("stored Content = %q", stored.Content)
 	}
 }
 
