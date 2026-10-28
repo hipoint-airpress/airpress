@@ -2,11 +2,13 @@ package impl
 
 import (
 	"context"
+	"fmt"
 	"html"
 	"net/url"
 	"regexp"
 	"strings"
 
+	"github.com/hipoint-airpress/airpress/consts"
 	"github.com/hipoint-airpress/airpress/dal"
 	"github.com/hipoint-airpress/airpress/model/entity"
 	"github.com/hipoint-airpress/airpress/service"
@@ -172,16 +174,20 @@ func findAttachmentsByKeys(ctx context.Context, keys []string) (map[string]*enti
 }
 
 // urlFragment 返回 URL 中的 fragment（不含 "#"），解析失败或没有 fragment 时返回空串。
+// 使用 EscapedFragment 保留原始百分号编码，避免解码后的空格、括号破坏 Markdown 链接。
 func urlFragment(raw string) string {
 	value := strings.TrimSpace(html.UnescapeString(raw))
 	parsed, err := url.Parse(value)
 	if err != nil {
 		return ""
 	}
-	return parsed.Fragment
+	return parsed.EscapedFragment()
 }
 
 func rewriteContentURLs(ctx context.Context, content string, mode contentURLMode, composite storage.FileStorageComposite) (string, error) {
+	if mode == contentURLResolve && composite == nil {
+		return content, fmt.Errorf("content url resolve requires file storage composite")
+	}
 	targets := extractContentTargets(content)
 	if len(targets) == 0 {
 		return content, nil
@@ -221,6 +227,10 @@ func rewriteContentURLs(ctx context.Context, content string, mode contentURLMode
 			attachment, ok := attachments[key]
 			if !ok {
 				continue
+			}
+			// 存储类型不受支持时跳过该 target，保持正文原样；composite 对未知类型会 panic。
+			if mode == contentURLResolve && !isSupportedAttachmentType(attachment.Type) {
+				break
 			}
 			// 通过 file_key 命中时统一使用 attachment.path，原 URL 的查询串会被丢弃，
 			// 以当前存储配置/样式参数为准；fragment 属于文档定位，需要保留。
@@ -281,9 +291,29 @@ func resolveCandidateKeys(raw string) []string {
 	if i := strings.IndexByte(value, '#'); i >= 0 {
 		value = value[:i]
 	}
-	unescaped := html.UnescapeString(value)
-	if unescaped != value {
-		return []string{unescaped, value}
+	htmlUnescaped := html.UnescapeString(value)
+	decoded, err := url.PathUnescape(htmlUnescaped)
+	candidates := make([]string, 0, 3)
+	if err == nil && decoded != htmlUnescaped {
+		candidates = append(candidates, decoded)
 	}
-	return []string{value}
+	if htmlUnescaped != value {
+		candidates = append(candidates, htmlUnescaped)
+	}
+	if len(candidates) == 0 {
+		return []string{value}
+	}
+	if candidates[len(candidates)-1] != value {
+		candidates = append(candidates, value)
+	}
+	return candidates
+}
+
+// isSupportedAttachmentType 判断存储工厂是否支持该附件类型。
+func isSupportedAttachmentType(attachmentType consts.AttachmentType) bool {
+	switch attachmentType {
+	case consts.AttachmentTypeLocal, consts.AttachmentTypeMinIO, consts.AttachmentTypeAliOSS:
+		return true
+	}
+	return false
 }

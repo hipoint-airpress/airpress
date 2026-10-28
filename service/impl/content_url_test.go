@@ -364,3 +364,109 @@ func TestContentURLServiceResolvePreservesFragment(t *testing.T) {
 		t.Fatalf("Resolve() = %q, want %q", got, want)
 	}
 }
+
+// TestContentURLServiceResolvePreservesEscapedFragment 验证 fragment 的百分号编码不被解码。
+func TestContentURLServiceResolvePreservesEscapedFragment(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	if err := db.Create(&entity.Attachment{
+		Name: "doc", Path: "upload/doc/a.pdf", FileKey: "upload/doc/a.pdf", Type: consts.AttachmentTypeLocal,
+	}).Error; err != nil {
+		t.Fatalf("create attachment: %v", err)
+	}
+	composite := fakeFileStorageComposite{
+		consts.AttachmentTypeLocal: &fakeFileStorage{attachmentType: consts.AttachmentTypeLocal, baseURL: "https://blog.example.com"},
+	}
+	svc := &contentURLServiceImpl{FileStorageComposite: composite}
+
+	content := `<a href="upload/doc/a.pdf#nameddest=Chapter%201">doc</a>
+[x](upload/doc/a.pdf#nameddest=Chapter%201)`
+	want := `<a href="https://blog.example.com/upload/doc/a.pdf#nameddest=Chapter%201">doc</a>
+[x](https://blog.example.com/upload/doc/a.pdf#nameddest=Chapter%201)`
+
+	got, err := svc.Resolve(context.Background(), content)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("Resolve() =\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// TestContentURLServiceResolveIgnoresPlainRelativeLinks 验证未匹配附件的站内相对链接保持原样。
+func TestContentURLServiceResolveIgnoresPlainRelativeLinks(t *testing.T) {
+	setupPostAttachmentDB(t)
+	composite := fakeFileStorageComposite{
+		consts.AttachmentTypeLocal: &fakeFileStorage{attachmentType: consts.AttachmentTypeLocal, baseURL: "https://blog.example.com"},
+	}
+	svc := &contentURLServiceImpl{FileStorageComposite: composite}
+
+	content := `[about](about.html)
+[a](archives/foo)
+[a](?page=2)`
+	got, err := svc.Resolve(context.Background(), content)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if got != content {
+		t.Fatalf("Resolve() = %q, want unchanged %q", got, content)
+	}
+}
+
+// TestContentURLServiceResolveSkipsUnsupportedType 验证不支持的存储类型不 panic 且保持原样。
+func TestContentURLServiceResolveSkipsUnsupportedType(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	if err := db.Create(&entity.Attachment{
+		Name: "up", Path: "upload/img/up.png", FileKey: "upload/img/up.png", Type: consts.AttachmentTypeUpOSS,
+	}).Error; err != nil {
+		t.Fatalf("create attachment: %v", err)
+	}
+	composite := fakeFileStorageComposite{
+		consts.AttachmentTypeLocal: &fakeFileStorage{attachmentType: consts.AttachmentTypeLocal, baseURL: "https://blog.example.com"},
+	}
+	svc := &contentURLServiceImpl{FileStorageComposite: composite}
+
+	content := `![up](upload/img/up.png)`
+	got, err := svc.Resolve(context.Background(), content)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if got != content {
+		t.Fatalf("Resolve() = %q, want unchanged %q", got, content)
+	}
+}
+
+// TestContentURLServiceResolveDecodesEscapedPath 验证百分号编码的路径可匹配并解析。
+func TestContentURLServiceResolveDecodesEscapedPath(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	if err := db.Create(&entity.Attachment{
+		Name: "chinese", Path: "upload/img/中文.png", FileKey: "upload/img/中文.png", Type: consts.AttachmentTypeLocal,
+	}).Error; err != nil {
+		t.Fatalf("create attachment: %v", err)
+	}
+	composite := fakeFileStorageComposite{
+		consts.AttachmentTypeLocal: &fakeFileStorage{attachmentType: consts.AttachmentTypeLocal, baseURL: "https://blog.example.com"},
+	}
+	svc := &contentURLServiceImpl{FileStorageComposite: composite}
+
+	got, err := svc.Resolve(context.Background(), `![a](upload/img/%E4%B8%AD%E6%96%87.png)`)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	want := `![a](https://blog.example.com/upload/img/中文.png)`
+	if got != want {
+		t.Fatalf("Resolve() = %q, want %q", got, want)
+	}
+}
+
+// TestContentURLServiceResolveNilComposite 验证缺少存储依赖时返回错误而非 panic。
+func TestContentURLServiceResolveNilComposite(t *testing.T) {
+	svc := &contentURLServiceImpl{}
+	content := `![a](upload/img/a.png)`
+	got, err := svc.Resolve(context.Background(), content)
+	if err == nil {
+		t.Fatalf("Resolve() error = nil, want error")
+	}
+	if got != content {
+		t.Fatalf("Resolve() = %q, want unchanged %q", got, content)
+	}
+}
