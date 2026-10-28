@@ -44,6 +44,18 @@ func (u *userServiceImpl) GetAllUser(ctx context.Context) ([]*entity.User, error
 	return users, nil
 }
 
+func (u *userServiceImpl) GetByIDs(ctx context.Context, ids []int32) ([]*entity.User, error) {
+	if len(ids) == 0 {
+		return make([]*entity.User, 0), nil
+	}
+	userDAL := dal.GetQueryByCtx(ctx).User
+	users, err := userDAL.WithContext(ctx).Where(userDAL.ID.In(ids...)).Find()
+	if err != nil {
+		return nil, WrapDBErr(err)
+	}
+	return users, nil
+}
+
 func (u *userServiceImpl) UpdatePassword(ctx context.Context, oldPassword string, newPassword string) error {
 	user, err := MustGetAuthorizedUser(ctx)
 	if err != nil {

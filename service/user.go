@@ -12,6 +12,7 @@ import (
 
 type UserService interface {
 	GetAllUser(ctx context.Context) ([]*entity.User, error)
+	GetByIDs(ctx context.Context, ids []int32) ([]*entity.User, error)
 	GetByEmail(ctx context.Context, email string) (*entity.User, error)
 	ConvertToDTO(ctx context.Context, user *entity.User) *dto.User
 	GetByUsername(ctx context.Context, username string) (*entity.User, error)
