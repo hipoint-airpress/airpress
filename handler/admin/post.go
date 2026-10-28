@@ -64,7 +64,7 @@ func (p *PostHandler) ListPosts(ctx *gin.Context) (interface{}, error) {
 		return nil, err
 	}
 	if postQuery.More == nil || *postQuery.More {
-		postVOs, err := p.PostAssembler.ConvertToListVO(ctx, posts)
+		postVOs, err := p.PostAssembler.ConvertToAdminListVO(ctx, posts)
 		return dto.NewPage(postVOs, totalCount, postQuery.Page), err
 	}
 	postDTOs := make([]*dto.Post, 0)
@@ -137,7 +137,7 @@ func (p *PostHandler) ListPostsByStatus(ctx *gin.Context) (interface{}, error) {
 		*postQuery.More = false
 	}
 	if postQuery.More == nil {
-		postVOs, err := p.PostAssembler.ConvertToListVO(ctx, posts)
+		postVOs, err := p.PostAssembler.ConvertToAdminListVO(ctx, posts)
 		return dto.NewPage(postVOs, totalCount, postQuery.Page), err
 	}
 
@@ -174,7 +174,7 @@ func (p *PostHandler) GetByPostID(ctx *gin.Context) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	postDetailVO, err := p.PostAssembler.ConvertToDetailVO(ctx, post)
+	postDetailVO, err := p.PostAssembler.ConvertToAdminDetailVO(ctx, post)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +208,7 @@ func (p *PostHandler) CreatePost(ctx *gin.Context) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	return p.PostAssembler.ConvertToDetailVO(ctx, post)
+	return p.PostAssembler.ConvertToAdminDetailVO(ctx, post)
 }
 
 // UpdatePost godoc
