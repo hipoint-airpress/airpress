@@ -9,7 +9,6 @@ import (
 
 	"github.com/hipoint-airpress/airpress/dal"
 	"github.com/hipoint-airpress/airpress/model/entity"
-	"github.com/hipoint-airpress/airpress/service/storage"
 )
 
 var (
@@ -95,7 +94,7 @@ const (
 // NormalizeContentURLs 把正文中指向附件库的完整 URL 归一化为 attachment.path。
 // 外部链接、站内链接、无法匹配到附件的内容保持原样。可重复执行。
 func NormalizeContentURLs(ctx context.Context, content string) (string, error) {
-	return rewriteContentURLs(ctx, content, contentURLNormalize, nil)
+	return rewriteContentURLs(ctx, content, contentURLNormalize)
 }
 
 // normalizeCandidateKeys 生成用于匹配 attachment.path / file_key 的候选值。
@@ -160,7 +159,7 @@ func findAttachmentsByKeys(ctx context.Context, keys []string) (map[string]*enti
 	return result, nil
 }
 
-func rewriteContentURLs(ctx context.Context, content string, mode contentURLMode, composite storage.FileStorageComposite) (string, error) {
+func rewriteContentURLs(ctx context.Context, content string, mode contentURLMode) (string, error) {
 	targets := extractContentTargets(content)
 	if len(targets) == 0 {
 		return content, nil
@@ -199,14 +198,7 @@ func rewriteContentURLs(ctx context.Context, content string, mode contentURLMode
 			if !ok {
 				continue
 			}
-			replacement := attachment.Path
-			if mode == contentURLResolve {
-				replacement, err = composite.GetFileStorage(attachment.Type).GetFilePath(ctx, attachment.Path)
-				if err != nil {
-					return "", err
-				}
-			}
-			replacements[target] = replacement
+			replacements[target] = attachment.Path
 			break
 		}
 	}
