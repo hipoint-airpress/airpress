@@ -9,6 +9,7 @@ func init() {
 	injection.Provide(
 		NewAdminService,
 		NewAttachmentService,
+		NewContentURLService,
 		NewAuthenticateService,
 		NewBackUpService,
 		NewBaseCommentService,

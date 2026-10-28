@@ -9,6 +9,8 @@ import (
 
 	"github.com/hipoint-airpress/airpress/dal"
 	"github.com/hipoint-airpress/airpress/model/entity"
+	"github.com/hipoint-airpress/airpress/service"
+	"github.com/hipoint-airpress/airpress/service/storage"
 )
 
 var (
@@ -94,7 +96,7 @@ const (
 // NormalizeContentURLs 把正文中指向附件库的完整 URL 归一化为 attachment.path。
 // 外部链接、站内链接、无法匹配到附件的内容保持原样。可重复执行。
 func NormalizeContentURLs(ctx context.Context, content string) (string, error) {
-	return rewriteContentURLs(ctx, content, contentURLNormalize)
+	return rewriteContentURLs(ctx, content, contentURLNormalize, nil)
 }
 
 // normalizeCandidateKeys 生成用于匹配 attachment.path / file_key 的候选值。
@@ -179,7 +181,7 @@ func urlFragment(raw string) string {
 	return parsed.Fragment
 }
 
-func rewriteContentURLs(ctx context.Context, content string, mode contentURLMode) (string, error) {
+func rewriteContentURLs(ctx context.Context, content string, mode contentURLMode, composite storage.FileStorageComposite) (string, error) {
 	targets := extractContentTargets(content)
 	if len(targets) == 0 {
 		return content, nil
@@ -192,6 +194,8 @@ func rewriteContentURLs(ctx context.Context, content string, mode contentURLMode
 		var keys []string
 		if mode == contentURLNormalize {
 			keys = normalizeCandidateKeys(target)
+		} else {
+			keys = resolveCandidateKeys(target)
 		}
 		keysByTarget[target] = keys
 		for _, key := range keys {
@@ -220,7 +224,15 @@ func rewriteContentURLs(ctx context.Context, content string, mode contentURLMode
 			}
 			// 通过 file_key 命中时统一使用 attachment.path，原 URL 的查询串会被丢弃，
 			// 以当前存储配置/样式参数为准；fragment 属于文档定位，需要保留。
-			replacement := attachment.Path
+			var replacement string
+			if mode == contentURLNormalize {
+				replacement = attachment.Path
+			} else {
+				replacement, err = composite.GetFileStorage(attachment.Type).GetFilePath(ctx, attachment.Path)
+				if err != nil {
+					return content, err
+				}
+			}
 			if fragment := urlFragment(target); fragment != "" {
 				replacement += "#" + fragment
 			}
@@ -232,4 +244,46 @@ func rewriteContentURLs(ctx context.Context, content string, mode contentURLMode
 		return content, nil
 	}
 	return replaceContentTargets(content, replacements), nil
+}
+
+type contentURLServiceImpl struct {
+	FileStorageComposite storage.FileStorageComposite
+}
+
+func NewContentURLService(fileStorageComposite storage.FileStorageComposite) service.ContentURLService {
+	return &contentURLServiceImpl{FileStorageComposite: fileStorageComposite}
+}
+
+func (s *contentURLServiceImpl) Normalize(ctx context.Context, content string) (string, error) {
+	return NormalizeContentURLs(ctx, content)
+}
+
+func (s *contentURLServiceImpl) Resolve(ctx context.Context, content string) (string, error) {
+	return rewriteContentURLs(ctx, content, contentURLResolve, s.FileStorageComposite)
+}
+
+// resolveCandidateKeys 识别正文中可能是附件相对 path 的值。
+// 剥离 #fragment 后再用于匹配，fragment 由调用方在替换时拼回。
+func resolveCandidateKeys(raw string) []string {
+	value := strings.TrimSpace(raw)
+	if value == "" || strings.HasPrefix(value, "/") || strings.HasPrefix(value, "#") {
+		return nil
+	}
+	lower := strings.ToLower(value)
+	if strings.Contains(lower, "://") {
+		return nil
+	}
+	for _, scheme := range []string{"data:", "mailto:", "tel:", "javascript:"} {
+		if strings.HasPrefix(lower, scheme) {
+			return nil
+		}
+	}
+	if i := strings.IndexByte(value, '#'); i >= 0 {
+		value = value[:i]
+	}
+	unescaped := html.UnescapeString(value)
+	if unescaped != value {
+		return []string{unescaped, value}
+	}
+	return []string{value}
 }

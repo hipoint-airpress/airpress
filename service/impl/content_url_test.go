@@ -2,11 +2,14 @@ package impl
 
 import (
 	"context"
+	"mime/multipart"
 	"reflect"
 	"testing"
 
 	"github.com/hipoint-airpress/airpress/consts"
+	"github.com/hipoint-airpress/airpress/model/dto"
 	"github.com/hipoint-airpress/airpress/model/entity"
+	"github.com/hipoint-airpress/airpress/service/storage"
 )
 
 func TestExtractContentTargets(t *testing.T) {
@@ -270,5 +273,94 @@ func TestNormalizeContentURLsEdgeCases(t *testing.T) {
 				t.Fatalf("NormalizeContentURLs() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+type fakeFileStorage struct {
+	attachmentType consts.AttachmentType
+	baseURL        string
+}
+
+func (f *fakeFileStorage) Upload(context.Context, *multipart.FileHeader) (*dto.AttachmentDTO, error) {
+	return nil, nil
+}
+
+func (f *fakeFileStorage) Delete(context.Context, string) error { return nil }
+
+func (f *fakeFileStorage) GetAttachmentType() consts.AttachmentType { return f.attachmentType }
+
+func (f *fakeFileStorage) GetFilePath(_ context.Context, relativePath string) (string, error) {
+	return f.baseURL + "/" + relativePath, nil
+}
+
+type fakeFileStorageComposite map[consts.AttachmentType]storage.FileStorage
+
+func (f fakeFileStorageComposite) GetFileStorage(storageType consts.AttachmentType) storage.FileStorage {
+	return f[storageType]
+}
+
+func TestContentURLServiceResolve(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	attachments := []*entity.Attachment{
+		{Name: "local", Path: "upload/img/local.png", FileKey: "upload/img/local.png", Type: consts.AttachmentTypeLocal},
+		{Name: "oss", Path: "upload/img/oss.png?x-oss-process=style/thumb", FileKey: "upload/img/oss.png", Type: consts.AttachmentTypeAliOSS},
+		{Name: "minio", Path: "upload/img/minio.png", FileKey: "upload/img/minio.png", Type: consts.AttachmentTypeMinIO},
+	}
+	if err := db.Create(&attachments).Error; err != nil {
+		t.Fatalf("create attachments: %v", err)
+	}
+
+	composite := fakeFileStorageComposite{
+		consts.AttachmentTypeLocal:  &fakeFileStorage{attachmentType: consts.AttachmentTypeLocal, baseURL: "https://blog.example.com"},
+		consts.AttachmentTypeAliOSS: &fakeFileStorage{attachmentType: consts.AttachmentTypeAliOSS, baseURL: "https://cdn.example.com"},
+		consts.AttachmentTypeMinIO:  &fakeFileStorage{attachmentType: consts.AttachmentTypeMinIO, baseURL: "https://minio.example.com/bucket"},
+	}
+	svc := &contentURLServiceImpl{FileStorageComposite: composite}
+
+	content := `![local](upload/img/local.png)
+![oss](upload/img/oss.png?x-oss-process=style/thumb)
+![minio](upload/img/minio.png)
+![external](https://other.example.com/remote.png)`
+	want := `![local](https://blog.example.com/upload/img/local.png)
+![oss](https://cdn.example.com/upload/img/oss.png?x-oss-process=style/thumb)
+![minio](https://minio.example.com/bucket/upload/img/minio.png)
+![external](https://other.example.com/remote.png)`
+
+	got, err := svc.Resolve(context.Background(), content)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("Resolve() =\n%s\nwant:\n%s", got, want)
+	}
+
+	again, err := svc.Resolve(context.Background(), got)
+	if err != nil {
+		t.Fatalf("Resolve() second call error = %v", err)
+	}
+	if again != got {
+		t.Fatalf("Resolve() is not idempotent:\n%s", again)
+	}
+}
+
+func TestContentURLServiceResolvePreservesFragment(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	if err := db.Create(&entity.Attachment{
+		Name: "doc", Path: "upload/doc/a.pdf", FileKey: "upload/doc/a.pdf", Type: consts.AttachmentTypeLocal,
+	}).Error; err != nil {
+		t.Fatalf("create attachment: %v", err)
+	}
+	composite := fakeFileStorageComposite{
+		consts.AttachmentTypeLocal: &fakeFileStorage{attachmentType: consts.AttachmentTypeLocal, baseURL: "https://blog.example.com"},
+	}
+	svc := &contentURLServiceImpl{FileStorageComposite: composite}
+
+	got, err := svc.Resolve(context.Background(), `<a href="upload/doc/a.pdf#page=5">doc</a>`)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	want := `<a href="https://blog.example.com/upload/doc/a.pdf#page=5">doc</a>`
+	if got != want {
+		t.Fatalf("Resolve() = %q, want %q", got, want)
 	}
 }
