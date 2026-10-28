@@ -133,10 +133,7 @@ func (p *PostHandler) ListPostsByStatus(ctx *gin.Context) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	if postQuery.More == nil {
-		*postQuery.More = false
-	}
-	if postQuery.More == nil {
+	if postQuery.More == nil || *postQuery.More {
 		postVOs, err := p.PostAssembler.ConvertToAdminListVO(ctx, posts)
 		return dto.NewPage(postVOs, totalCount, postQuery.Page), err
 	}
