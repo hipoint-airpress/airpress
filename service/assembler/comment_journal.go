@@ -55,7 +55,11 @@ func (j *journalCommentAssembler) ConvertToWithJournal(ctx context.Context, comm
 		result = append(result, commentWithJournal)
 		journal, ok := journals[comment.PostID]
 		if ok {
-			commentWithJournal.Journal = j.JournalService.ConvertToDTO(journal)
+			journalDTO, err := j.JournalService.ConvertToDTO(ctx, journal)
+			if err != nil {
+				return nil, err
+			}
+			commentWithJournal.Journal = journalDTO
 		}
 	}
 	return result, nil

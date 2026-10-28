@@ -116,7 +116,7 @@ func (j *JournalHandler) CreateJournal(ctx *gin.Context) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	return j.JournalService.ConvertToDTO(journal), nil
+	return j.JournalService.ConvertToDTO(ctx, journal)
 }
 
 // UpdateJournal godoc

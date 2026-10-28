@@ -642,3 +642,34 @@ func TestContentURLServiceResolveNilComposite(t *testing.T) {
 		t.Fatalf("Resolve() = %q, want unchanged %q", got, content)
 	}
 }
+
+func TestJournalServiceConvertToDTOResolvesContent(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	if err := db.AutoMigrate(&entity.Journal{}); err != nil {
+		t.Fatalf("auto migrate journal: %v", err)
+	}
+	if err := db.Create(&entity.Attachment{
+		Name: "a", Path: "upload/img/a.png", FileKey: "upload/img/a.png", Type: consts.AttachmentTypeLocal,
+	}).Error; err != nil {
+		t.Fatalf("create attachment: %v", err)
+	}
+
+	composite := fakeFileStorageComposite{
+		consts.AttachmentTypeLocal: &fakeFileStorage{attachmentType: consts.AttachmentTypeLocal, baseURL: "https://blog.example.com"},
+	}
+	svc := &journalServiceImpl{ContentURLService: NewContentURLService(composite)}
+
+	dtoJournal, err := svc.ConvertToDTO(context.Background(), &entity.Journal{
+		SourceContent: "![a](upload/img/a.png)",
+		Content:       `<img src="upload/img/a.png">`,
+	})
+	if err != nil {
+		t.Fatalf("ConvertToDTO() error = %v", err)
+	}
+	if dtoJournal.SourceContent != "![a](https://blog.example.com/upload/img/a.png)" {
+		t.Fatalf("SourceContent = %q", dtoJournal.SourceContent)
+	}
+	if dtoJournal.Content != `<img src="https://blog.example.com/upload/img/a.png">` {
+		t.Fatalf("Content = %q", dtoJournal.Content)
+	}
+}

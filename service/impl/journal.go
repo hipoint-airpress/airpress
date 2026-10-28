@@ -41,15 +41,23 @@ func NewJournalService(journalCommentService service.JournalCommentService, cont
 	}
 }
 
-func (j *journalServiceImpl) ConvertToDTO(journal *entity.Journal) *dto.Journal {
+func (j *journalServiceImpl) ConvertToDTO(ctx context.Context, journal *entity.Journal) (*dto.Journal, error) {
+	sourceContent, err := j.ContentURLService.Resolve(ctx, journal.SourceContent)
+	if err != nil {
+		return nil, err
+	}
+	content, err := j.ContentURLService.Resolve(ctx, journal.Content)
+	if err != nil {
+		return nil, err
+	}
 	return &dto.Journal{
 		ID:            journal.ID,
-		SourceContent: journal.SourceContent,
-		Content:       journal.Content,
+		SourceContent: sourceContent,
+		Content:       content,
 		Likes:         journal.Likes,
 		CreateTime:    journal.CreateTime.UnixMilli(),
 		JournalType:   journal.Type,
-	}
+	}, nil
 }
 
 func (j *journalServiceImpl) ConvertToWithCommentDTOList(ctx context.Context, journals []*entity.Journal) ([]*dto.JournalWithComment, error) {
@@ -63,8 +71,12 @@ func (j *journalServiceImpl) ConvertToWithCommentDTOList(ctx context.Context, jo
 	}
 	result := make([]*dto.JournalWithComment, 0, len(journals))
 	for _, journal := range journals {
+		journalDTO, err := j.ConvertToDTO(ctx, journal)
+		if err != nil {
+			return nil, err
+		}
 		journalWithCommentCount := &dto.JournalWithComment{
-			Journal: *j.ConvertToDTO(journal),
+			Journal: *journalDTO,
 		}
 		if commentCount, ok := commentCountMap[journal.ID]; ok {
 			journalWithCommentCount.CommentCount = commentCount
