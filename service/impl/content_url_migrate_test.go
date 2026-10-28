@@ -61,6 +61,9 @@ func TestMigrateContentURLs(t *testing.T) {
 	if gotJournal.Content != `<img src="upload/img/a.png">` {
 		t.Fatalf("journal Content = %q", gotJournal.Content)
 	}
+	if gotJournal.SourceContent != "![a](upload/img/a.png)" {
+		t.Fatalf("journal SourceContent = %q", gotJournal.SourceContent)
+	}
 
 	again, err := MigrateContentURLs(context.Background())
 	if err != nil {

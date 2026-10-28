@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"go.uber.org/fx"
+	"gorm.io/gorm"
 
 	"github.com/hipoint-airpress/airpress/config"
 	"github.com/hipoint-airpress/airpress/dal"
@@ -20,7 +21,7 @@ func main() {
 		fx.Provide(log.NewGormLogger),
 		fx.Provide(dal.NewGormDB),
 		fx.Provide(config.NewConfig),
-		fx.Invoke(func() error {
+		fx.Invoke(func(_ *gorm.DB) error {
 			updated, err := serviceimpl.MigrateContentURLs(context.Background())
 			if err != nil {
 				return err
