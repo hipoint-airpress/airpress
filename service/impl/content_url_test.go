@@ -203,3 +203,72 @@ func TestNormalizeContentURLs(t *testing.T) {
 		t.Fatalf("NormalizeContentURLs() is not idempotent:\n%s", again)
 	}
 }
+
+func TestNormalizeContentURLsEdgeCases(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	attachments := []*entity.Attachment{
+		{Name: "pdf", Path: "upload/doc/a.pdf", FileKey: "upload/doc/a.pdf"},
+		{Name: "entity-query", Path: "upload/img/a.png?x=1&y=2", FileKey: "upload/img/a.png"},
+		{Name: "chinese", Path: "upload/img/中文.png", FileKey: "upload/img/中文.png"},
+		{Name: "oss", Path: "upload/img/oss.png?x-oss-process=style/thumb", FileKey: "upload/img/oss.png"},
+		{Name: "manual-local", Path: "upload/doc/manual.pdf", FileKey: "upload/doc/manual.pdf"},
+		{Name: "manual-oss", Path: "upload/doc/manual.pdf?x-oss-process=style/thumb", FileKey: "upload/doc/manual.pdf"},
+		{Name: "local", Path: "upload/img/local.png", FileKey: "upload/img/local.png"},
+	}
+	if err := db.Create(&attachments).Error; err != nil {
+		t.Fatalf("create attachments: %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "preserve fragment",
+			content: `<a href="https://blog.example.com/upload/doc/a.pdf#page=5">x</a>`,
+			want:    `<a href="upload/doc/a.pdf#page=5">x</a>`,
+		},
+		{
+			name:    "html entity query",
+			content: `<img src="https://blog.example.com/upload/img/a.png?x=1&amp;y=2">`,
+			want:    `<img src="upload/img/a.png?x=1&amp;y=2">`,
+		},
+		{
+			name:    "encoded chinese path",
+			content: `![a](https://blog.example.com/upload/img/%E4%B8%AD%E6%96%87.png)`,
+			want:    `![a](upload/img/中文.png)`,
+		},
+		{
+			name:    "file key fallback",
+			content: `![a](https://cdn.example.com/upload/img/oss.png)`,
+			want:    `![a](upload/img/oss.png?x-oss-process=style/thumb)`,
+		},
+		{
+			name:    "path wins over file key",
+			content: `![a](https://blog.example.com/upload/doc/manual.pdf)`,
+			want:    `![a](upload/doc/manual.pdf)`,
+		},
+		{
+			name:    "multiple targets same attachment",
+			content: `![a](https://blog.example.com/upload/img/local.png)<img src="/upload/img/local.png">`,
+			want:    `![a](upload/img/local.png)<img src="upload/img/local.png">`,
+		},
+		{
+			name:    "uppercase scheme",
+			content: `![a](HTTPS://blog.example.com/upload/img/local.png)`,
+			want:    `![a](upload/img/local.png)`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := NormalizeContentURLs(context.Background(), tc.content)
+			if err != nil {
+				t.Fatalf("NormalizeContentURLs() error = %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("NormalizeContentURLs() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

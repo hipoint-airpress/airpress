@@ -101,10 +101,11 @@ func NormalizeContentURLs(ctx context.Context, content string) (string, error) {
 // 不依赖任何域名配置，因此换域名后的旧数据同样能命中。
 func normalizeCandidateKeys(raw string) []string {
 	value := strings.TrimSpace(html.UnescapeString(raw))
+	lower := strings.ToLower(value)
 	var parsed *url.URL
 	var err error
 	switch {
-	case strings.HasPrefix(value, "http://"), strings.HasPrefix(value, "https://"):
+	case strings.HasPrefix(lower, "http://"), strings.HasPrefix(lower, "https://"):
 		parsed, err = url.Parse(value)
 		if err != nil {
 			return nil
@@ -148,15 +149,34 @@ func findAttachmentsByKeys(ctx context.Context, keys []string) (map[string]*enti
 	attachments, err := attachmentDAL.WithContext(ctx).
 		Where(attachmentDAL.Path.In(keys...)).
 		Or(attachmentDAL.FileKey.In(keys...)).
+		Order(attachmentDAL.ID).
 		Find()
 	if err != nil {
 		return nil, WrapDBErr(err)
 	}
+	// Path 优先于 FileKey：先写 Path 并保留首个（ID 最小）记录，再写 FileKey，
+	// 已存在的 key 不覆盖，保证同一 file_key 多行时匹配结果确定。
 	for _, attachment := range attachments {
-		result[attachment.Path] = attachment
-		result[attachment.FileKey] = attachment
+		if _, ok := result[attachment.Path]; !ok {
+			result[attachment.Path] = attachment
+		}
+	}
+	for _, attachment := range attachments {
+		if _, ok := result[attachment.FileKey]; !ok {
+			result[attachment.FileKey] = attachment
+		}
 	}
 	return result, nil
+}
+
+// urlFragment 返回 URL 中的 fragment（不含 "#"），解析失败或没有 fragment 时返回空串。
+func urlFragment(raw string) string {
+	value := strings.TrimSpace(html.UnescapeString(raw))
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return ""
+	}
+	return parsed.Fragment
 }
 
 func rewriteContentURLs(ctx context.Context, content string, mode contentURLMode) (string, error) {
@@ -188,7 +208,7 @@ func rewriteContentURLs(ctx context.Context, content string, mode contentURLMode
 
 	attachments, err := findAttachmentsByKeys(ctx, allKeys)
 	if err != nil {
-		return "", err
+		return content, err
 	}
 
 	replacements := make(map[string]string, len(targets))
@@ -198,7 +218,13 @@ func rewriteContentURLs(ctx context.Context, content string, mode contentURLMode
 			if !ok {
 				continue
 			}
-			replacements[target] = attachment.Path
+			// 通过 file_key 命中时统一使用 attachment.path，原 URL 的查询串会被丢弃，
+			// 以当前存储配置/样式参数为准；fragment 属于文档定位，需要保留。
+			replacement := attachment.Path
+			if fragment := urlFragment(target); fragment != "" {
+				replacement += "#" + fragment
+			}
+			replacements[target] = replacement
 			break
 		}
 	}
