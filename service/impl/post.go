@@ -26,24 +26,27 @@ import (
 
 type postServiceImpl struct {
 	service.BasePostService
-	CategoryService service.CategoryService
-	OptionService   service.OptionService
-	Event           event.Bus
-	Cache           cache.Cache
+	CategoryService   service.CategoryService
+	OptionService     service.OptionService
+	ContentURLService service.ContentURLService
+	Event             event.Bus
+	Cache             cache.Cache
 }
 
 func NewPostService(basePostService service.BasePostService,
 	categoryService service.CategoryService,
 	optionService service.OptionService,
+	contentURLService service.ContentURLService,
 	event event.Bus,
 	cache cache.Cache,
 ) service.PostService {
 	return &postServiceImpl{
-		BasePostService: basePostService,
-		CategoryService: categoryService,
-		OptionService:   optionService,
-		Event:           event,
-		Cache:           cache,
+		BasePostService:   basePostService,
+		CategoryService:   categoryService,
+		OptionService:     optionService,
+		ContentURLService: contentURLService,
+		Event:             event,
+		Cache:             cache,
 	}
 }
 
@@ -161,10 +164,18 @@ func (p postServiceImpl) Update(ctx context.Context, postID int32, postParam *pa
 }
 
 func (p postServiceImpl) ConvertParam(ctx context.Context, postParam *param.Post) (*entity.Post, error) {
+	originalContent, err := p.ContentURLService.Normalize(ctx, postParam.OriginalContent)
+	if err != nil {
+		return nil, err
+	}
+	content, err := p.ContentURLService.Normalize(ctx, postParam.Content)
+	if err != nil {
+		return nil, err
+	}
 	post := &entity.Post{
 		Type:            consts.PostTypePost,
 		DisallowComment: postParam.DisallowComment,
-		OriginalContent: postParam.OriginalContent,
+		OriginalContent: originalContent,
 		Password:        postParam.Password,
 		MetaDescription: postParam.MetaDescription,
 		MetaKeywords:    postParam.MetaKeywords,
@@ -184,14 +195,14 @@ func (p postServiceImpl) ConvertParam(ctx context.Context, postParam *param.Post
 	}
 	// 服务端统一渲染:markdown 类型的 FormatContent 由 OriginalContent 转 HTML,
 	// 不信任客户端提交的 Content;富文本或原文为空时原样透传。
-	if post.EditorType == consts.EditorTypeMarkdown && postParam.OriginalContent != "" {
-		htmlContent, err := util.MarkdownToHTML(postParam.OriginalContent)
+	if post.EditorType == consts.EditorTypeMarkdown && originalContent != "" {
+		htmlContent, err := util.MarkdownToHTML(originalContent)
 		if err != nil {
 			return nil, xerr.BadParam.Wrapf(err, "convert markdown err").WithStatus(xerr.StatusBadRequest)
 		}
 		post.FormatContent = htmlContent
 	} else {
-		post.FormatContent = postParam.Content
+		post.FormatContent = content
 	}
 	if postParam.EditTime != nil {
 		post.EditTime = util.TimePtr(time.UnixMilli(*postParam.EditTime))

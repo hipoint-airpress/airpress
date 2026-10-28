@@ -4,13 +4,78 @@ import (
 	"context"
 	"mime/multipart"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/hipoint-airpress/airpress/consts"
 	"github.com/hipoint-airpress/airpress/model/dto"
 	"github.com/hipoint-airpress/airpress/model/entity"
+	"github.com/hipoint-airpress/airpress/model/param"
 	"github.com/hipoint-airpress/airpress/service/storage"
 )
+
+type stubContentURLService struct{}
+
+func (stubContentURLService) Normalize(_ context.Context, content string) (string, error) {
+	return content, nil
+}
+
+func (stubContentURLService) Resolve(_ context.Context, content string) (string, error) {
+	return content, nil
+}
+
+func TestPostConvertParamNormalizesContent(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	if err := db.Create(&entity.Attachment{
+		Name: "a", Path: "upload/img/a.png", FileKey: "upload/img/a.png", Type: consts.AttachmentTypeLocal,
+	}).Error; err != nil {
+		t.Fatalf("create attachment: %v", err)
+	}
+
+	editorType := consts.EditorTypeMarkdown
+	svc := postServiceImpl{ContentURLService: NewContentURLService(nil)}
+	post, err := svc.ConvertParam(context.Background(), &param.Post{
+		Title:           "hello",
+		EditorType:      &editorType,
+		OriginalContent: "![a](https://blog.example.com/upload/img/a.png)",
+	})
+	if err != nil {
+		t.Fatalf("ConvertParam() error = %v", err)
+	}
+	if post.OriginalContent != "![a](upload/img/a.png)" {
+		t.Fatalf("OriginalContent = %q, want relative path", post.OriginalContent)
+	}
+	if !strings.Contains(post.FormatContent, "upload/img/a.png") || strings.Contains(post.FormatContent, "blog.example.com") {
+		t.Fatalf("FormatContent = %q, want relative path only", post.FormatContent)
+	}
+}
+
+func TestJournalServiceCreateNormalizesContent(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	if err := db.AutoMigrate(&entity.Journal{}); err != nil {
+		t.Fatalf("auto migrate journal: %v", err)
+	}
+	if err := db.Create(&entity.Attachment{
+		Name: "a", Path: "upload/img/a.png", FileKey: "upload/img/a.png", Type: consts.AttachmentTypeLocal,
+	}).Error; err != nil {
+		t.Fatalf("create attachment: %v", err)
+	}
+
+	svc := &journalServiceImpl{ContentURLService: NewContentURLService(nil)}
+	journal, err := svc.Create(context.Background(), &param.Journal{
+		SourceContent: "![a](https://blog.example.com/upload/img/a.png)",
+		Content:       `<img src="https://blog.example.com/upload/img/a.png">`,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if journal.SourceContent != "![a](upload/img/a.png)" {
+		t.Fatalf("SourceContent = %q", journal.SourceContent)
+	}
+	if journal.Content != `<img src="upload/img/a.png">` {
+		t.Fatalf("Content = %q", journal.Content)
+	}
+}
 
 func TestExtractContentTargets(t *testing.T) {
 	content := `![a](upload/a.png)

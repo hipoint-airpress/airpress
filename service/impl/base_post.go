@@ -24,10 +24,11 @@ import (
 type basePostServiceImpl struct {
 	OptionService      service.OptionService
 	BaseCommentService service.BaseCommentService
+	ContentURLService  service.ContentURLService
 	CounterCache       *util.CounterCache[int32]
 }
 
-func NewBasePostService(optionService service.OptionService, baseCommentService service.BaseCommentService) service.BasePostService {
+func NewBasePostService(optionService service.OptionService, baseCommentService service.BaseCommentService, contentURLService service.ContentURLService) service.BasePostService {
 	counterCache := util.NewCounterCache(time.Second*5, nil, func(postID int32, count int64) {
 		ctx := context.Background()
 		postDAL := dal.GetQueryByCtx(ctx).Post
@@ -40,6 +41,7 @@ func NewBasePostService(optionService service.OptionService, baseCommentService 
 		CounterCache:       counterCache,
 		OptionService:      optionService,
 		BaseCommentService: baseCommentService,
+		ContentURLService:  contentURLService,
 	}
 	return b
 }
@@ -589,8 +591,16 @@ func (b basePostServiceImpl) UpdateStatusBatch(ctx context.Context, status const
 }
 
 func (b basePostServiceImpl) UpdateDraftContent(ctx context.Context, postID int32, content, originalContent string) (*entity.Post, error) {
+	content, err := b.ContentURLService.Normalize(ctx, content)
+	if err != nil {
+		return nil, err
+	}
+	originalContent, err = b.ContentURLService.Normalize(ctx, originalContent)
+	if err != nil {
+		return nil, err
+	}
 	var post *entity.Post
-	err := dal.GetQueryByCtx(ctx).Transaction(func(tx *dal.Query) error {
+	err = dal.GetQueryByCtx(ctx).Transaction(func(tx *dal.Query) error {
 		postDAL := tx.Post
 		current, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(postID)).First()
 		if err != nil {

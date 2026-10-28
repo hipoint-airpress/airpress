@@ -15,7 +15,7 @@ func ptrEditor(e consts.EditorType) *consts.EditorType { return &e }
 // 而不是原样信任客户端提交的 Content。
 func TestPostConvertParamMarkdownRendersHTML(t *testing.T) {
 	md := "# 标题\n\n**粗体**"
-	post, err := postServiceImpl{}.ConvertParam(context.Background(), &param.Post{
+	post, err := postServiceImpl{ContentURLService: stubContentURLService{}}.ConvertParam(context.Background(), &param.Post{
 		Title:           "t",
 		EditorType:      ptrEditor(consts.EditorTypeMarkdown),
 		OriginalContent: md,
@@ -35,7 +35,7 @@ func TestPostConvertParamMarkdownRendersHTML(t *testing.T) {
 // 富文本写入保持原样透传 Content,不做二次渲染。
 func TestPostConvertParamRichTextPassthrough(t *testing.T) {
 	html := "<p>已排版</p>"
-	post, err := postServiceImpl{}.ConvertParam(context.Background(), &param.Post{
+	post, err := postServiceImpl{ContentURLService: stubContentURLService{}}.ConvertParam(context.Background(), &param.Post{
 		Title:           "t",
 		EditorType:      ptrEditor(consts.EditorTypeRichText),
 		OriginalContent: html,
@@ -52,7 +52,7 @@ func TestPostConvertParamRichTextPassthrough(t *testing.T) {
 // markdown 类型但原文为空时,回退透传 Content(兼容只提交 HTML 的调用方)。
 func TestPostConvertParamMarkdownEmptyOriginalFallsBack(t *testing.T) {
 	client := "<p>from client</p>"
-	post, err := postServiceImpl{}.ConvertParam(context.Background(), &param.Post{
+	post, err := postServiceImpl{ContentURLService: stubContentURLService{}}.ConvertParam(context.Background(), &param.Post{
 		Title:      "t",
 		EditorType: ptrEditor(consts.EditorTypeMarkdown),
 		Content:    client,
@@ -68,7 +68,7 @@ func TestPostConvertParamMarkdownEmptyOriginalFallsBack(t *testing.T) {
 // sheet 与 post 走同样的写入策略。
 func TestSheetConvertParamMarkdownRendersHTML(t *testing.T) {
 	md := "## 页面\n\n- 列表项"
-	sheet, err := sheetServiceImpl{}.ConvertParam(context.Background(), &param.Sheet{
+	sheet, err := sheetServiceImpl{ContentURLService: stubContentURLService{}}.ConvertParam(context.Background(), &param.Sheet{
 		Title:           "s",
 		EditorType:      ptrEditor(consts.EditorTypeMarkdown),
 		OriginalContent: md,

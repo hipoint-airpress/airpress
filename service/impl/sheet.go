@@ -24,6 +24,7 @@ type sheetServiceImpl struct {
 	MetaService         service.MetaService
 	OptionService       service.OptionService
 	SheetCommentService service.SheetCommentService
+	ContentURLService   service.ContentURLService
 	Event               event.Bus
 	Cache               cache.Cache
 	ThemeService        service.ThemeService
@@ -33,6 +34,7 @@ func NewSheetService(basePostService service.BasePostService,
 	metaService service.MetaService,
 	optionService service.OptionService,
 	sheetCommentService service.SheetCommentService,
+	contentURLService service.ContentURLService,
 	event event.Bus,
 	cache cache.Cache,
 	themeService service.ThemeService,
@@ -42,6 +44,7 @@ func NewSheetService(basePostService service.BasePostService,
 		MetaService:         metaService,
 		OptionService:       optionService,
 		SheetCommentService: sheetCommentService,
+		ContentURLService:   contentURLService,
 		Event:               event,
 		Cache:               cache,
 		ThemeService:        themeService,
@@ -78,10 +81,18 @@ func (s sheetServiceImpl) Create(ctx context.Context, sheetParam *param.Sheet) (
 }
 
 func (s sheetServiceImpl) ConvertParam(ctx context.Context, sheetParam *param.Sheet) (*entity.Post, error) {
+	originalContent, err := s.ContentURLService.Normalize(ctx, sheetParam.OriginalContent)
+	if err != nil {
+		return nil, err
+	}
+	content, err := s.ContentURLService.Normalize(ctx, sheetParam.Content)
+	if err != nil {
+		return nil, err
+	}
 	sheet := &entity.Post{
 		Type:            consts.PostTypeSheet,
 		DisallowComment: sheetParam.DisallowComment,
-		OriginalContent: sheetParam.OriginalContent,
+		OriginalContent: originalContent,
 		Password:        sheetParam.Password,
 		MetaDescription: sheetParam.MetaDescription,
 		MetaKeywords:    sheetParam.MetaKeywords,
@@ -101,14 +112,14 @@ func (s sheetServiceImpl) ConvertParam(ctx context.Context, sheetParam *param.Sh
 	}
 	// 服务端统一渲染:markdown 类型的 FormatContent 由 OriginalContent 转 HTML,
 	// 不信任客户端提交的 Content;富文本或原文为空时原样透传。
-	if sheet.EditorType == consts.EditorTypeMarkdown && sheetParam.OriginalContent != "" {
-		htmlContent, err := util.MarkdownToHTML(sheetParam.OriginalContent)
+	if sheet.EditorType == consts.EditorTypeMarkdown && originalContent != "" {
+		htmlContent, err := util.MarkdownToHTML(originalContent)
 		if err != nil {
 			return nil, xerr.BadParam.Wrapf(err, "convert markdown err").WithStatus(xerr.StatusBadRequest)
 		}
 		sheet.FormatContent = htmlContent
 	} else {
-		sheet.FormatContent = sheetParam.Content
+		sheet.FormatContent = content
 	}
 
 	sheet.WordCount = util.HTMLFormatWordCount(sheet.FormatContent)

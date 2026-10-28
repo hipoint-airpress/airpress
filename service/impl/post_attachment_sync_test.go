@@ -164,7 +164,7 @@ func TestUpdateDraftContentSyncsPostAttachment(t *testing.T) {
 	}
 
 	ctx := postActorContext(author)
-	if _, err := (basePostServiceImpl{}).UpdateDraftContent(ctx, post.ID,
+	if _, err := (basePostServiceImpl{ContentURLService: stubContentURLService{}}).UpdateDraftContent(ctx, post.ID,
 		"![x](upload/image/2026/10/a.png)", "![x](upload/image/2026/10/a.png)"); err != nil {
 		t.Fatalf("UpdateDraftContent() error = %v", err)
 	}
@@ -298,7 +298,7 @@ func TestUpdateDraftContentMatchesOriginalContent(t *testing.T) {
 
 	ctx := postActorContext(author)
 	// 只出现在 Markdown 原文、未出现在渲染结果中的附件也必须建立关联。
-	if _, err := (basePostServiceImpl{}).UpdateDraftContent(ctx, post.ID,
+	if _, err := (basePostServiceImpl{ContentURLService: stubContentURLService{}}).UpdateDraftContent(ctx, post.ID,
 		"<p>no image</p>", "![x](upload/image/2026/10/a.png)"); err != nil {
 		t.Fatalf("UpdateDraftContent() error = %v", err)
 	}

@@ -14,6 +14,7 @@ import (
 
 type journalServiceImpl struct {
 	JournalCommentService service.JournalCommentService
+	ContentURLService     service.ContentURLService
 }
 
 func (*journalServiceImpl) Page(ctx context.Context, page param.Page, sort *param.Sort) ([]*entity.Journal, int64, error) {
@@ -33,9 +34,10 @@ func (*journalServiceImpl) Page(ctx context.Context, page param.Page, sort *para
 	return journals, totalCount, nil
 }
 
-func NewJournalService(journalCommentService service.JournalCommentService) service.JournalService {
+func NewJournalService(journalCommentService service.JournalCommentService, contentURLService service.ContentURLService) service.JournalService {
 	return &journalServiceImpl{
 		JournalCommentService: journalCommentService,
+		ContentURLService:     contentURLService,
 	}
 }
 
@@ -98,13 +100,21 @@ func (j *journalServiceImpl) ListJournal(ctx context.Context, journalQuery param
 }
 
 func (j *journalServiceImpl) Create(ctx context.Context, journalParam *param.Journal) (*entity.Journal, error) {
+	sourceContent, err := j.ContentURLService.Normalize(ctx, journalParam.SourceContent)
+	if err != nil {
+		return nil, err
+	}
+	content, err := j.ContentURLService.Normalize(ctx, journalParam.Content)
+	if err != nil {
+		return nil, err
+	}
 	journal := &entity.Journal{
 		Type:          journalParam.Type,
-		SourceContent: journalParam.SourceContent,
-		Content:       journalParam.Content,
+		SourceContent: sourceContent,
+		Content:       content,
 	}
 	journalDAL := dal.GetQueryByCtx(ctx).Journal
-	err := journalDAL.WithContext(ctx).Create(journal)
+	err = journalDAL.WithContext(ctx).Create(journal)
 	if err != nil {
 		return nil, WrapDBErr(err)
 	}
@@ -117,8 +127,16 @@ func (j *journalServiceImpl) Update(ctx context.Context, journalID int32, journa
 	if err != nil {
 		return nil, WrapDBErr(err)
 	}
-	journal.SourceContent = journalParam.SourceContent
-	journal.Content = journalParam.Content
+	sourceContent, err := j.ContentURLService.Normalize(ctx, journalParam.SourceContent)
+	if err != nil {
+		return nil, err
+	}
+	content, err := j.ContentURLService.Normalize(ctx, journalParam.Content)
+	if err != nil {
+		return nil, err
+	}
+	journal.SourceContent = sourceContent
+	journal.Content = content
 	if err != nil {
 		return nil, err
 	}
