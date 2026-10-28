@@ -1,8 +1,12 @@
 package impl
 
 import (
+	"context"
 	"reflect"
 	"testing"
+
+	"github.com/hipoint-airpress/airpress/consts"
+	"github.com/hipoint-airpress/airpress/model/entity"
 )
 
 func TestExtractContentTargets(t *testing.T) {
@@ -156,5 +160,46 @@ func TestReplaceContentTargetsHref(t *testing.T) {
 	want := `<a href="new.png">link</a>`
 	if got := replaceContentTargets(content, replacements); got != want {
 		t.Fatalf("replaceContentTargets() = %q, want %q", got, want)
+	}
+}
+
+func TestNormalizeContentURLs(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+	attachments := []*entity.Attachment{
+		{Name: "local", Path: "upload/img/local.png", FileKey: "upload/img/local.png", Type: consts.AttachmentTypeLocal},
+		{Name: "oss", Path: "upload/img/oss.png?x-oss-process=style/thumb", FileKey: "upload/img/oss.png", Type: consts.AttachmentTypeAliOSS},
+		{Name: "minio", Path: "upload/img/minio.png", FileKey: "upload/img/minio.png", Type: consts.AttachmentTypeMinIO},
+	}
+	if err := db.Create(&attachments).Error; err != nil {
+		t.Fatalf("create attachments: %v", err)
+	}
+
+	content := `![local](https://blog.example.com/upload/img/local.png)
+<img src="/upload/img/local.png">
+![oss](https://cdn.example.com/upload/img/oss.png?x-oss-process=style/thumb)
+![minio](https://minio.example.com/bucket/upload/img/minio.png)
+![external](https://other.example.com/remote.png)
+[internal](/archives/hello)`
+	want := `![local](upload/img/local.png)
+<img src="upload/img/local.png">
+![oss](upload/img/oss.png?x-oss-process=style/thumb)
+![minio](upload/img/minio.png)
+![external](https://other.example.com/remote.png)
+[internal](/archives/hello)`
+
+	got, err := NormalizeContentURLs(context.Background(), content)
+	if err != nil {
+		t.Fatalf("NormalizeContentURLs() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("NormalizeContentURLs() =\n%s\nwant:\n%s", got, want)
+	}
+
+	again, err := NormalizeContentURLs(context.Background(), got)
+	if err != nil {
+		t.Fatalf("NormalizeContentURLs() second call error = %v", err)
+	}
+	if again != got {
+		t.Fatalf("NormalizeContentURLs() is not idempotent:\n%s", again)
 	}
 }
