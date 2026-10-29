@@ -91,10 +91,11 @@ func (s *Server) RegisterRouters() {
 					attachmentRouter.GET("/:id", s.wrapHandler(s.AttachmentHandler.GetAttachmentByID))
 					attachmentRouter.GET("/media_types", s.wrapHandler(s.AttachmentHandler.GetAllMediaType))
 					attachmentRouter.GET("types", s.wrapHandler(s.AttachmentHandler.GetAllTypes))
+					// 作者可删除自己上传的附件，归属与引用校验在 service 层完成。
+					attachmentRouter.DELETE("/:id", s.wrapHandler(s.AttachmentHandler.DeleteAttachment))
+					attachmentRouter.DELETE("", s.wrapHandler(s.AttachmentHandler.DeleteAttachmentInBatch))
 
 					editorAttachmentRouter := editorRouter.Group("/attachments")
-					editorAttachmentRouter.DELETE("/:id", s.wrapHandler(s.AttachmentHandler.DeleteAttachment))
-					editorAttachmentRouter.DELETE("", s.wrapHandler(s.AttachmentHandler.DeleteAttachmentInBatch))
 					editorAttachmentRouter.PUT("/:id", s.wrapHandler(s.AttachmentHandler.UpdateAttachment))
 				}
 				{
