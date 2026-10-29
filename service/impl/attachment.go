@@ -3,6 +3,7 @@ package impl
 import (
 	"context"
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"os"
 	"strings"
@@ -297,13 +298,24 @@ func (a *attachmentServiceImpl) Upload(ctx context.Context, fileHeader *multipar
 	return attachmentDTO, nil
 }
 
-func (a *attachmentServiceImpl) Delete(ctx context.Context, attachmentID int32) (*entity.Attachment, error) {
+func (a *attachmentServiceImpl) Delete(ctx context.Context, attachmentID int32, force bool) (*entity.Attachment, error) {
 	attachmentDAL := dal.GetQueryByCtx(ctx).Attachment
 	attachment, err := attachmentDAL.WithContext(ctx).Where(attachmentDAL.ID.Eq(attachmentID)).Take()
 	if err != nil {
 		return nil, WrapDBErr(err)
 	}
 	err = dal.GetQueryByCtx(ctx).Transaction(func(tx *dal.Query) error {
+		if !force {
+			refCount, err := tx.PostAttachment.WithContext(ctx).Where(tx.PostAttachment.AttachmentID.Eq(attachmentID)).Count()
+			if err != nil {
+				return WrapDBErr(err)
+			}
+			if refCount > 0 {
+				return xerr.NoType.New("attachment %d referenced by %d posts", attachmentID, refCount).
+					WithStatus(xerr.StatusConflict).
+					WithMsg(fmt.Sprintf("该附件已被 %d 篇文章引用，强制删除将同时解除文章关联", refCount))
+			}
+		}
 		postAttachmentDAL := tx.PostAttachment
 		if _, err := postAttachmentDAL.WithContext(ctx).Where(postAttachmentDAL.AttachmentID.Eq(attachmentID)).Delete(); err != nil {
 			return WrapDBErr(err)
@@ -324,11 +336,50 @@ func (a *attachmentServiceImpl) Delete(ctx context.Context, attachmentID int32) 
 	return attachment, nil
 }
 
-func (a *attachmentServiceImpl) DeleteBatch(ctx context.Context, ids []int32) (attachments []*entity.Attachment, err error) {
+func (a *attachmentServiceImpl) DeleteBatch(ctx context.Context, ids []int32, force bool) (attachments []*entity.Attachment, err error) {
+	uniqueIDMap := make(map[int32]struct{}, len(ids))
+	uniqueIDs := make([]int32, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := uniqueIDMap[id]; ok {
+			continue
+		}
+		uniqueIDMap[id] = struct{}{}
+		uniqueIDs = append(uniqueIDs, id)
+	}
+
+	if len(uniqueIDs) == 0 {
+		return make([]*entity.Attachment, 0), nil
+	}
+
+	if !force {
+		postAttachmentDAL := dal.GetQueryByCtx(ctx).PostAttachment
+		var referencedIDs []int32
+		if err := postAttachmentDAL.WithContext(ctx).
+			Where(postAttachmentDAL.AttachmentID.In(uniqueIDs...)).
+			Pluck(postAttachmentDAL.AttachmentID, &referencedIDs); err != nil {
+			return nil, WrapDBErr(err)
+		}
+		referencedSet := make(map[int32]struct{}, len(referencedIDs))
+		for _, id := range referencedIDs {
+			referencedSet[id] = struct{}{}
+		}
+		referencedCount := 0
+		for _, id := range uniqueIDs {
+			if _, ok := referencedSet[id]; ok {
+				referencedCount++
+			}
+		}
+		if referencedCount > 0 {
+			return nil, xerr.NoType.New("%d attachments referenced by posts", referencedCount).
+				WithStatus(xerr.StatusConflict).
+				WithMsg(fmt.Sprintf("选中的附件中有 %d 个被文章引用，强制删除将同时解除文章关联", referencedCount))
+		}
+	}
+
 	attachments = make([]*entity.Attachment, 0)
 	var globalErr error
-	for _, id := range ids {
-		attachment, err := a.Delete(ctx, id)
+	for _, id := range uniqueIDs {
+		attachment, err := a.Delete(ctx, id, true)
 		if err != nil {
 			globalErr = err
 		} else {
@@ -336,7 +387,7 @@ func (a *attachmentServiceImpl) DeleteBatch(ctx context.Context, ids []int32) (a
 		}
 	}
 	if globalErr != nil {
-		return attachments, xerr.NoType.Wrap(err).WithMsg("Failed to delete some files")
+		return attachments, xerr.NoType.Wrap(globalErr).WithMsg("Failed to delete some files")
 	}
 	return attachments, nil
 }

@@ -16,6 +16,7 @@ const (
 	StatusInternalServerError = http.StatusInternalServerError
 	StatusForbidden           = http.StatusForbidden
 	StatusNotFound            = http.StatusNotFound
+	StatusConflict            = http.StatusConflict
 	StatusTooManyRequests     = http.StatusTooManyRequests
 )
 

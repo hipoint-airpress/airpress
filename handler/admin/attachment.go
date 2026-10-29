@@ -155,13 +155,15 @@ func (a *AttachmentHandler) UpdateAttachment(ctx *gin.Context) (interface{}, err
 
 // DeleteAttachment godoc
 // @Summary      删除附件
-// @Description  根据附件ID删除指定附件
+// @Description  根据附件ID删除指定附件。附件被文章引用时返回 409，需携带 force=true 强制删除
 // @Tags         Admin.Attachment
 // @Produce      json
-// @Param        id  path     int  true  "附件ID"  example(1)
+// @Param        id     path  int   true   "附件ID"  example(1)
+// @Param        force  query bool  false  "是否强制删除被文章引用的附件"  example(false)
 // @Security     AdminApiKey
 // @Success      200  {object}  dto.BaseDTO
 // @Failure      400  {object}  dto.BaseDTO
+// @Failure      409  {object}  dto.BaseDTO
 // @Failure      500  {object}  dto.BaseDTO
 // @Router       /admin/attachments/{id} [delete]
 func (a *AttachmentHandler) DeleteAttachment(ctx *gin.Context) (interface{}, error) {
@@ -169,19 +171,22 @@ func (a *AttachmentHandler) DeleteAttachment(ctx *gin.Context) (interface{}, err
 	if err != nil {
 		return nil, err
 	}
-	return a.AttachmentService.Delete(ctx, id)
+	force := ctx.Query("force") == "true"
+	return a.AttachmentService.Delete(ctx, id, force)
 }
 
 // DeleteAttachmentInBatch godoc
 // @Summary      批量删除附件
-// @Description  根据附件ID列表批量删除附件
+// @Description  根据附件ID列表批量删除附件。选中项中存在被文章引用的附件时返回 409，需携带 force=true 强制删除
 // @Tags         Admin.Attachment
 // @Accept       json
 // @Produce      json
-// @Param        ids  body     []int  true  "附件ID列表"
+// @Param        force  query bool   false  "是否强制删除被文章引用的附件"  example(false)
+// @Param        ids    body  []int  true   "附件ID列表"
 // @Security     AdminApiKey
 // @Success      200  {object}  dto.BaseDTO
 // @Failure      400  {object}  dto.BaseDTO
+// @Failure      409  {object}  dto.BaseDTO
 // @Failure      500  {object}  dto.BaseDTO
 // @Router       /admin/attachments [delete]
 func (a *AttachmentHandler) DeleteAttachmentInBatch(ctx *gin.Context) (interface{}, error) {
@@ -190,7 +195,8 @@ func (a *AttachmentHandler) DeleteAttachmentInBatch(ctx *gin.Context) (interface
 	if err != nil {
 		return nil, xerr.WithStatus(err, xerr.StatusBadRequest).WithMsg("parameter error")
 	}
-	return a.AttachmentService.DeleteBatch(ctx, ids)
+	force := ctx.Query("force") == "true"
+	return a.AttachmentService.DeleteBatch(ctx, ids, force)
 }
 
 // GetAllMediaType godoc

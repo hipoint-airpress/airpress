@@ -13,6 +13,7 @@ import (
 	"github.com/hipoint-airpress/airpress/consts"
 	"github.com/hipoint-airpress/airpress/dal"
 	"github.com/hipoint-airpress/airpress/model/entity"
+	"github.com/hipoint-airpress/airpress/util/xerr"
 )
 
 var postAttachmentDSNSeq int64
@@ -263,8 +264,11 @@ func TestDeleteAttachmentCleansPostAttachment(t *testing.T) {
 	svc := &attachmentServiceImpl{
 		FileStorageComposite: &stubStorageComposite{storage: &stubFileStorage{}},
 	}
-	if _, err := svc.Delete(context.Background(), attachment.ID); err != nil {
-		t.Fatalf("Delete() error = %v", err)
+	if _, err := svc.Delete(context.Background(), attachment.ID, false); err == nil || xerr.GetHTTPStatus(err) != xerr.StatusConflict {
+		t.Fatalf("Delete() without force error = %v, want 409 conflict", err)
+	}
+	if _, err := svc.Delete(context.Background(), attachment.ID, true); err != nil {
+		t.Fatalf("Delete() with force error = %v", err)
 	}
 
 	var count int64
@@ -273,6 +277,48 @@ func TestDeleteAttachmentCleansPostAttachment(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("relations = %d, want 0", count)
+	}
+}
+
+func TestDeleteAttachmentBatchRejectsReferencedWithoutForce(t *testing.T) {
+	db := setupPostAttachmentDB(t)
+
+	free := &entity.Attachment{Name: "free", Path: "upload/image/2026/10/free.png", UserID: 1, FileKey: "free"}
+	referenced := &entity.Attachment{Name: "ref", Path: "upload/image/2026/10/ref.png", UserID: 1, FileKey: "ref"}
+	if err := db.Create(free).Error; err != nil {
+		t.Fatalf("create free attachment: %v", err)
+	}
+	if err := db.Create(referenced).Error; err != nil {
+		t.Fatalf("create referenced attachment: %v", err)
+	}
+	if err := db.Create(&entity.PostAttachment{PostID: 1, AttachmentID: referenced.ID}).Error; err != nil {
+		t.Fatalf("create relation: %v", err)
+	}
+
+	svc := &attachmentServiceImpl{
+		FileStorageComposite: &stubStorageComposite{storage: &stubFileStorage{}},
+	}
+	ids := []int32{free.ID, referenced.ID}
+	if _, err := svc.DeleteBatch(context.Background(), ids, false); err == nil || xerr.GetHTTPStatus(err) != xerr.StatusConflict {
+		t.Fatalf("DeleteBatch() without force error = %v, want 409 conflict", err)
+	}
+
+	var attachmentCount int64
+	if err := db.Model(&entity.Attachment{}).Count(&attachmentCount).Error; err != nil {
+		t.Fatalf("count attachments: %v", err)
+	}
+	if attachmentCount != 2 {
+		t.Fatalf("attachments = %d, want 2", attachmentCount)
+	}
+
+	if _, err := svc.DeleteBatch(context.Background(), ids, true); err != nil {
+		t.Fatalf("DeleteBatch() with force error = %v", err)
+	}
+	if err := db.Model(&entity.PostAttachment{}).Where("attachment_id = ?", referenced.ID).Count(&attachmentCount).Error; err != nil {
+		t.Fatalf("count relations: %v", err)
+	}
+	if attachmentCount != 0 {
+		t.Fatalf("relations = %d, want 0", attachmentCount)
 	}
 }
 
