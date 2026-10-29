@@ -29,11 +29,16 @@ const (
 )
 
 const (
-	AirPressBackupPrefix         = "airpress-backup-"
-	AirPressDataExportPrefix     = "airpress-data-export-"
-	AirPressBackupMarkdownPrefix = "airpress-backup-markdown-"
-	AirPressDefaultTagColor      = "#cfd3d7"
-	AirPressUploadDir            = "upload"
+	AirPressBackupPrefix          = "airpress-backup-"
+	AirPressDataExportPrefix      = "airpress-data-export-"
+	AirPressBackupMarkdownPrefix  = "airpress-backup-markdown-"
+	AirPressDefaultTagColor       = "#cfd3d7"
+	AirPressUploadDir             = "upload"
+	AirPressLogDir                = "logs"
+	AirPressTemplateDir           = "resources/template"
+	AirPressAdminResourcesDir     = "resources/admin"
+	AirPressThemeDir              = "resources/template/theme"
+	AirPressDefaultSQLiteFileName = "airpress.db"
 	// AirPressDefaultThemeDirName must keep matching the default theme submodule!!
 	// repository name (see .gitmodules); renaming it breaks theme resolution.
 	AirPressDefaultThemeDirName = "anatole"
