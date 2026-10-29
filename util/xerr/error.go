@@ -38,6 +38,8 @@ type customError struct {
 	// msg used to return to the response
 	msg    string
 	errMsg string
+	// data carries structured details (e.g. referenced posts for a 409).
+	data interface{}
 }
 
 func (errorType ErrorType) New(errMsg string, args ...interface{}) *customError {
@@ -121,7 +123,28 @@ func (ce *customError) WithStatus(status int) *customError {
 }
 
 func (ce *customError) WithMsg(msg string) *customError {
-	return &customError{errorType: ce.errorType, cause: ce, httpStatus: ce.httpStatus, msg: msg}
+	return &customError{errorType: ce.errorType, cause: ce, httpStatus: ce.httpStatus, msg: msg, data: ce.data}
+}
+
+// WithData attaches structured details to the error response.
+func (ce *customError) WithData(data interface{}) *customError {
+	return &customError{errorType: ce.errorType, cause: ce, httpStatus: ce.httpStatus, msg: ce.msg, errMsg: ce.errMsg, data: data}
+}
+
+// GetData returns the structured details attached to the error, if any.
+func GetData(err error) interface{} {
+	for err != nil {
+		//nolint:errorlint
+		if e, ok := err.(*customError); ok {
+			if e.data != nil {
+				return e.data
+			}
+			err = e.cause
+		} else {
+			break
+		}
+	}
+	return nil
 }
 
 // GetType returns the error type

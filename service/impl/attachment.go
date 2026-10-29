@@ -304,34 +304,24 @@ func (a *attachmentServiceImpl) Delete(ctx context.Context, attachmentID int32, 
 	if err != nil {
 		return nil, WrapDBErr(err)
 	}
-	err = dal.GetQueryByCtx(ctx).Transaction(func(tx *dal.Query) error {
-		if !force {
-			refCount, err := tx.PostAttachment.WithContext(ctx).Where(tx.PostAttachment.AttachmentID.Eq(attachmentID)).Count()
-			if err != nil {
-				return WrapDBErr(err)
-			}
-			if refCount > 0 {
-				return xerr.NoType.New("attachment %d referenced by %d posts", attachmentID, refCount).
-					WithStatus(xerr.StatusConflict).
-					WithMsg(fmt.Sprintf("该附件已被 %d 篇文章引用，强制删除将同时解除文章关联", refCount))
-			}
-		}
-		postAttachmentDAL := tx.PostAttachment
-		if _, err := postAttachmentDAL.WithContext(ctx).Where(postAttachmentDAL.AttachmentID.Eq(attachmentID)).Delete(); err != nil {
-			return WrapDBErr(err)
-		}
-		result, err := tx.Attachment.WithContext(ctx).Where(tx.Attachment.ID.Eq(attachmentID)).Delete()
-		if err != nil || result.RowsAffected != 1 {
-			return xerr.WithMsg(err, "delete file failed")
-		}
-		return nil
-	})
-	if err != nil {
+	if err := ensureAttachmentDeletePermission(ctx, attachment, force); err != nil {
 		return nil, err
 	}
-	fileStorage := a.FileStorageComposite.GetFileStorage(attachment.Type)
-	if err := fileStorage.Delete(ctx, attachment.FileKey); err != nil {
-		return nil, xerr.WithMsg(err, "delete file failed")
+	if !force {
+		postIDs, err := a.referencedPostIDs(ctx, []int32{attachmentID})
+		if err != nil {
+			return nil, err
+		}
+		if len(postIDs) > 0 {
+			posts, err := a.referencedPosts(ctx, postIDs)
+			if err != nil {
+				return nil, err
+			}
+			return nil, newAttachmentReferencedError([]*entity.Attachment{attachment}, len(postIDs), posts)
+		}
+	}
+	if err := a.deleteAttachmentRecord(ctx, attachment); err != nil {
+		return nil, err
 	}
 	return attachment, nil
 }
@@ -351,36 +341,34 @@ func (a *attachmentServiceImpl) DeleteBatch(ctx context.Context, ids []int32, fo
 		return make([]*entity.Attachment, 0), nil
 	}
 
+	query := dal.GetQueryByCtx(ctx)
+	existing, err := query.Attachment.WithContext(ctx).Where(query.Attachment.ID.In(uniqueIDs...)).Find()
+	if err != nil {
+		return nil, WrapDBErr(err)
+	}
+	for _, attachment := range existing {
+		if err := ensureAttachmentDeletePermission(ctx, attachment, force); err != nil {
+			return nil, err
+		}
+	}
 	if !force {
-		postAttachmentDAL := dal.GetQueryByCtx(ctx).PostAttachment
-		var referencedIDs []int32
-		if err := postAttachmentDAL.WithContext(ctx).
-			Where(postAttachmentDAL.AttachmentID.In(uniqueIDs...)).
-			Pluck(postAttachmentDAL.AttachmentID, &referencedIDs); err != nil {
-			return nil, WrapDBErr(err)
+		postIDs, err := a.referencedPostIDs(ctx, uniqueIDs)
+		if err != nil {
+			return nil, err
 		}
-		referencedSet := make(map[int32]struct{}, len(referencedIDs))
-		for _, id := range referencedIDs {
-			referencedSet[id] = struct{}{}
-		}
-		referencedCount := 0
-		for _, id := range uniqueIDs {
-			if _, ok := referencedSet[id]; ok {
-				referencedCount++
+		if len(postIDs) > 0 {
+			posts, err := a.referencedPosts(ctx, postIDs)
+			if err != nil {
+				return nil, err
 			}
-		}
-		if referencedCount > 0 {
-			return nil, xerr.NoType.New("%d attachments referenced by posts", referencedCount).
-				WithStatus(xerr.StatusConflict).
-				WithMsg(fmt.Sprintf("选中的附件中有 %d 个被文章引用，强制删除将同时解除文章关联", referencedCount))
+			return nil, newAttachmentReferencedError(existing, len(postIDs), posts)
 		}
 	}
 
-	attachments = make([]*entity.Attachment, 0)
+	attachments = make([]*entity.Attachment, 0, len(existing))
 	var globalErr error
-	for _, id := range uniqueIDs {
-		attachment, err := a.Delete(ctx, id, true)
-		if err != nil {
+	for _, attachment := range existing {
+		if err := a.deleteAttachmentRecord(ctx, attachment); err != nil {
 			globalErr = err
 		} else {
 			attachments = append(attachments, attachment)
@@ -390,6 +378,98 @@ func (a *attachmentServiceImpl) DeleteBatch(ctx context.Context, ids []int32, fo
 		return attachments, xerr.NoType.Wrap(globalErr).WithMsg("Failed to delete some files")
 	}
 	return attachments, nil
+}
+
+// deleteAttachmentRecord 删除附件关联、附件记录与物理文件，不包含权限与引用检查。
+func (a *attachmentServiceImpl) deleteAttachmentRecord(ctx context.Context, attachment *entity.Attachment) error {
+	err := dal.GetQueryByCtx(ctx).Transaction(func(tx *dal.Query) error {
+		postAttachmentDAL := tx.PostAttachment
+		if _, err := postAttachmentDAL.WithContext(ctx).Where(postAttachmentDAL.AttachmentID.Eq(attachment.ID)).Delete(); err != nil {
+			return WrapDBErr(err)
+		}
+		result, err := tx.Attachment.WithContext(ctx).Where(tx.Attachment.ID.Eq(attachment.ID)).Delete()
+		if err != nil || result.RowsAffected != 1 {
+			return xerr.WithMsg(err, "delete file failed")
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	fileStorage := a.FileStorageComposite.GetFileStorage(attachment.Type)
+	if err := fileStorage.Delete(ctx, attachment.FileKey); err != nil {
+		return xerr.WithMsg(err, "delete file failed")
+	}
+	return nil
+}
+
+// referencedPostIDs 返回引用这些附件的文章 ID。
+// 直接基于关联记录判断，即使文章记录已丢失也视为存在引用。
+func (a *attachmentServiceImpl) referencedPostIDs(ctx context.Context, attachmentIDs []int32) ([]int32, error) {
+	postIDs := make([]int32, 0)
+	if len(attachmentIDs) == 0 {
+		return postIDs, nil
+	}
+	query := dal.GetQueryByCtx(ctx)
+	if err := query.PostAttachment.WithContext(ctx).
+		Where(query.PostAttachment.AttachmentID.In(attachmentIDs...)).
+		Pluck(query.PostAttachment.PostID, &postIDs); err != nil {
+		return nil, WrapDBErr(err)
+	}
+	return postIDs, nil
+}
+
+// referencedPosts 查询引用文章详情，用于删除冲突提示。
+func (a *attachmentServiceImpl) referencedPosts(ctx context.Context, postIDs []int32) ([]*dto.AttachmentReferencedPost, error) {
+	if len(postIDs) == 0 {
+		return []*dto.AttachmentReferencedPost{}, nil
+	}
+	query := dal.GetQueryByCtx(ctx)
+	posts, err := query.Post.WithContext(ctx).
+		Where(query.Post.ID.In(postIDs...)).
+		Order(query.Post.ID).
+		Find()
+	if err != nil {
+		return nil, WrapDBErr(err)
+	}
+	result := make([]*dto.AttachmentReferencedPost, 0, len(posts))
+	for _, post := range posts {
+		result = append(result, &dto.AttachmentReferencedPost{
+			ID:    post.ID,
+			Title: post.Title,
+			Slug:  post.Slug,
+		})
+	}
+	return result, nil
+}
+
+// ensureAttachmentDeletePermission 校验删除权限：作者只能删除自己的附件且不能 force。
+func ensureAttachmentDeletePermission(ctx context.Context, attachment *entity.Attachment, force bool) error {
+	user, ok := currentUser(ctx)
+	if !ok || user.Role != consts.UserRoleAuthor {
+		return nil
+	}
+	if attachment.UserID != user.ID {
+		return xerr.WithStatus(nil, xerr.StatusForbidden).WithMsg("无权删除该附件")
+	}
+	if force {
+		return xerr.WithStatus(nil, xerr.StatusForbidden).WithMsg("作者无权强制删除附件")
+	}
+	return nil
+}
+
+func newAttachmentReferencedError(attachments []*entity.Attachment, count int, posts []*dto.AttachmentReferencedPost) error {
+	data := &dto.AttachmentReferenceData{Posts: posts}
+	if len(attachments) == 1 {
+		return xerr.NoType.New("attachment %d referenced by %d posts", attachments[0].ID, count).
+			WithStatus(xerr.StatusConflict).
+			WithMsg(fmt.Sprintf("该附件已被 %d 篇文章引用，强制删除将同时解除文章关联", count)).
+			WithData(data)
+	}
+	return xerr.NoType.New("attachments referenced by posts").
+		WithStatus(xerr.StatusConflict).
+		WithMsg("选中的附件中有被文章引用的附件，强制删除将同时解除文章关联").
+		WithData(data)
 }
 
 func (a *attachmentServiceImpl) Update(ctx context.Context, id int32, updateParam *param.AttachmentUpdate) (*entity.Attachment, error) {

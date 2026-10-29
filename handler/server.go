@@ -234,7 +234,7 @@ func (s *Server) wrapHandler(handler wrapperHandler) gin.HandlerFunc {
 		if err != nil {
 			s.logger.Error("handler error", zap.Error(err))
 			status := xerr.GetHTTPStatus(err)
-			ctx.JSON(status, &dto.BaseDTO{Status: status, Message: xerr.GetMessage(err)})
+			ctx.JSON(status, &dto.BaseDTO{Status: status, Message: xerr.GetMessage(err), Data: xerr.GetData(err)})
 			return
 		}
 
