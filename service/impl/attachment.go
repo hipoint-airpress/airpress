@@ -24,6 +24,42 @@ import (
 type attachmentServiceImpl struct {
 	OptionService        service.OptionService
 	FileStorageComposite storage.FileStorageComposite
+	UserService          service.UserService
+}
+
+// fillOwners 批量填充附件归属人，避免列表逐条查询用户。
+func (a *attachmentServiceImpl) fillOwners(ctx context.Context, attachments []*entity.Attachment, dtos []*dto.AttachmentDTO) error {
+	userIDs := make([]int32, 0, len(attachments))
+	seen := make(map[int32]struct{}, len(attachments))
+	for _, attachment := range attachments {
+		if attachment.UserID <= 0 {
+			continue
+		}
+		if _, ok := seen[attachment.UserID]; ok {
+			continue
+		}
+		seen[attachment.UserID] = struct{}{}
+		userIDs = append(userIDs, attachment.UserID)
+	}
+	if len(userIDs) == 0 {
+		return nil
+	}
+	users, err := a.UserService.GetByIDs(ctx, userIDs)
+	if err != nil {
+		return err
+	}
+	owners := make(map[int32]*dto.AttachmentOwner, len(users))
+	for _, user := range users {
+		owners[user.ID] = &dto.AttachmentOwner{
+			ID:       user.ID,
+			Username: user.Username,
+			Nickname: user.Nickname,
+		}
+	}
+	for i, attachment := range attachments {
+		dtos[i].Owner = owners[attachment.UserID]
+	}
+	return nil
 }
 
 func (a *attachmentServiceImpl) ConvertToDTOs(ctx context.Context, attachments []*entity.Attachment) ([]*dto.AttachmentDTO, error) {
@@ -54,13 +90,17 @@ func (a *attachmentServiceImpl) ConvertToDTOs(ctx context.Context, attachments [
 		dto.Path = path
 		dto.ThumbPath = thumbPath
 	}
+	if err := a.fillOwners(ctx, attachments, dtos); err != nil {
+		return nil, err
+	}
 	return dtos, nil
 }
 
-func NewAttachmentService(optionService service.OptionService, fileStorageComposite storage.FileStorageComposite) service.AttachmentService {
+func NewAttachmentService(optionService service.OptionService, fileStorageComposite storage.FileStorageComposite, userService service.UserService) service.AttachmentService {
 	return &attachmentServiceImpl{
 		FileStorageComposite: fileStorageComposite,
 		OptionService:        optionService,
+		UserService:          userService,
 	}
 }
 
@@ -74,7 +114,7 @@ func (a *attachmentServiceImpl) getThumbURL(ctx context.Context, attachmentType 
 }
 
 func (a *attachmentServiceImpl) ConvertToDTO(ctx context.Context, attachment *entity.Attachment) (*dto.AttachmentDTO, error) {
-	dto := &dto.AttachmentDTO{
+	attachmentDTO := &dto.AttachmentDTO{
 		ID:             attachment.ID,
 		Name:           attachment.Name,
 		Path:           attachment.Path,
@@ -95,9 +135,12 @@ func (a *attachmentServiceImpl) ConvertToDTO(ctx context.Context, attachment *en
 	if err != nil {
 		return nil, err
 	}
-	dto.Path = path
-	dto.ThumbPath = thumbPath
-	return dto, nil
+	attachmentDTO.Path = path
+	attachmentDTO.ThumbPath = thumbPath
+	if err := a.fillOwners(ctx, []*entity.Attachment{attachment}, []*dto.AttachmentDTO{attachmentDTO}); err != nil {
+		return nil, err
+	}
+	return attachmentDTO, nil
 }
 
 func (a *attachmentServiceImpl) Page(ctx context.Context, queryParam *param.AttachmentQuery) ([]*entity.Attachment, int64, error) {
@@ -124,7 +167,28 @@ func (a *attachmentServiceImpl) Page(ctx context.Context, queryParam *param.Atta
 		attachmentDo = attachmentDo.Where(attachmentDAL.MediaType.Eq(queryParam.MediaType))
 	}
 	if user, ok := currentUser(ctx); ok && user.Role == consts.UserRoleAuthor {
-		attachmentDo = attachmentDo.Where(attachmentDAL.UserID.Eq(user.ID))
+		// 作者可见范围 = 自己上传的附件 + 自己文章关联的附件。
+		// 管理员代传或历史无归属的附件不会转移 user_id，但文章转交后作者仍应能看到它们。
+		query := dal.GetQueryByCtx(ctx)
+		ownPostIDs := make([]int32, 0)
+		if err := query.Post.WithContext(ctx).
+			Where(query.Post.AuthorID.Eq(user.ID)).
+			Pluck(query.Post.ID, &ownPostIDs); err != nil {
+			return nil, 0, WrapDBErr(err)
+		}
+		linkedAttachmentIDs := make([]int32, 0)
+		if len(ownPostIDs) > 0 {
+			if err := query.PostAttachment.WithContext(ctx).
+				Where(query.PostAttachment.PostID.In(ownPostIDs...)).
+				Pluck(query.PostAttachment.AttachmentID, &linkedAttachmentIDs); err != nil {
+				return nil, 0, WrapDBErr(err)
+			}
+		}
+		authorScope := attachmentDAL.WithContext(ctx).Where(attachmentDAL.UserID.Eq(user.ID))
+		if len(linkedAttachmentIDs) > 0 {
+			authorScope = authorScope.Or(attachmentDAL.ID.In(linkedAttachmentIDs...))
+		}
+		attachmentDo = attachmentDo.Where(authorScope)
 	}
 	attachments, totalCount, err := attachmentDo.FindByPage(queryParam.PageNum*queryParam.PageSize, queryParam.PageSize)
 	if err != nil {
@@ -140,9 +204,41 @@ func (a *attachmentServiceImpl) GetAttachment(ctx context.Context, attachmentID 
 		return nil, WrapDBErr(err)
 	}
 	if err := ensureAuthorOwnsAttachment(ctx, attachment); err != nil {
-		return nil, err
+		// 作者对自己文章关联的附件（可能是管理员代传或历史无归属）应可只读访问。
+		linked, linkErr := canAuthorReadLinkedAttachment(ctx, attachmentID)
+		if linkErr != nil {
+			return nil, linkErr
+		}
+		if !linked {
+			return nil, err
+		}
 	}
 	return attachment, nil
+}
+
+// canAuthorReadLinkedAttachment 判断当前 Author 是否通过自己的文章关联到该附件。
+func canAuthorReadLinkedAttachment(ctx context.Context, attachmentID int32) (bool, error) {
+	user, ok := currentUser(ctx)
+	if !ok || user.Role != consts.UserRoleAuthor {
+		return false, nil
+	}
+	query := dal.GetQueryByCtx(ctx)
+	ownPostIDs := make([]int32, 0)
+	if err := query.Post.WithContext(ctx).
+		Where(query.Post.AuthorID.Eq(user.ID)).
+		Pluck(query.Post.ID, &ownPostIDs); err != nil {
+		return false, WrapDBErr(err)
+	}
+	if len(ownPostIDs) == 0 {
+		return false, nil
+	}
+	count, err := query.PostAttachment.WithContext(ctx).
+		Where(query.PostAttachment.AttachmentID.Eq(attachmentID), query.PostAttachment.PostID.In(ownPostIDs...)).
+		Count()
+	if err != nil {
+		return false, WrapDBErr(err)
+	}
+	return count > 0, nil
 }
 
 func (a *attachmentServiceImpl) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (attachmentDTO *dto.AttachmentDTO, err error) {
@@ -192,6 +288,9 @@ func (a *attachmentServiceImpl) Upload(ctx context.Context, fileHeader *multipar
 	}
 	attachmentDTO.ThumbPath, err = a.getThumbURL(ctx, attachmentType, attachmentEntity.ThumbPath)
 	if err != nil {
+		return nil, err
+	}
+	if err := a.fillOwners(ctx, []*entity.Attachment{attachmentEntity}, []*dto.AttachmentDTO{attachmentDTO}); err != nil {
 		return nil, err
 	}
 

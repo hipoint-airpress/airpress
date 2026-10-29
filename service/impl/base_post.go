@@ -360,26 +360,35 @@ func (b basePostServiceImpl) DeleteBatch(ctx context.Context, postIDs []int32) e
 	return err
 }
 
-// syncPostAttachments 重建文章与作者名下附件的关联。
+// syncPostAttachments 按正文引用重建文章与附件的关联。
+// 不再限制附件归属：管理员代传、历史无归属的附件也会被关联，
+// 避免文章转交后新作者保存正文时丢失关联。
 func syncPostAttachments(ctx context.Context, tx *dal.Query, post *entity.Post) error {
 	postAttachmentDAL := tx.PostAttachment
 	if _, err := postAttachmentDAL.WithContext(ctx).Where(postAttachmentDAL.PostID.Eq(post.ID)).Delete(); err != nil {
 		return WrapDBErr(err)
 	}
-	if post.AuthorID <= 0 {
+	content := post.OriginalContent + "\n" + post.FormatContent + "\n" + post.Thumbnail
+	keys := collectAttachmentKeys(content)
+	if len(keys) == 0 {
 		return nil
 	}
 	attachmentDAL := tx.Attachment
-	attachments, err := attachmentDAL.WithContext(ctx).Where(attachmentDAL.UserID.Eq(post.AuthorID)).Find()
+	attachments, err := attachmentDAL.WithContext(ctx).
+		Where(attachmentDAL.Path.In(keys...)).
+		Or(attachmentDAL.FileKey.In(keys...)).
+		Order(attachmentDAL.ID).
+		Find()
 	if err != nil {
 		return WrapDBErr(err)
 	}
-	content := post.OriginalContent + "\n" + post.FormatContent + "\n" + post.Thumbnail
-	records := make([]*entity.PostAttachment, 0)
+	seen := make(map[int32]struct{}, len(attachments))
+	records := make([]*entity.PostAttachment, 0, len(attachments))
 	for _, attachment := range attachments {
-		if attachment.Path == "" || !strings.Contains(content, attachment.Path) {
+		if _, ok := seen[attachment.ID]; ok {
 			continue
 		}
+		seen[attachment.ID] = struct{}{}
 		records = append(records, &entity.PostAttachment{
 			PostID:       post.ID,
 			AttachmentID: attachment.ID,

@@ -317,3 +317,27 @@ func isSupportedAttachmentType(attachmentType consts.AttachmentType) bool {
 	}
 	return false
 }
+
+// collectAttachmentKeys 从正文中收集可匹配附件 path/file_key 的候选值。
+// 同时覆盖完整 URL、站点根相对 URL 与已归一化的相对 path。
+func collectAttachmentKeys(content string) []string {
+	seen := make(map[string]struct{})
+	keys := make([]string, 0)
+	add := func(values []string) {
+		for _, value := range values {
+			if value == "" {
+				continue
+			}
+			if _, ok := seen[value]; ok {
+				continue
+			}
+			seen[value] = struct{}{}
+			keys = append(keys, value)
+		}
+	}
+	for _, target := range extractContentTargets(content) {
+		add(normalizeCandidateKeys(target))
+		add(resolveCandidateKeys(target))
+	}
+	return keys
+}

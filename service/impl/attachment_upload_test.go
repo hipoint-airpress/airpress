@@ -80,6 +80,15 @@ func (s *stubOptionService) GetAttachmentType(ctx context.Context) consts.Attach
 	return s.attachmentType
 }
 
+// stubUserService 只实现归属人查询，返回空列表。
+type stubUserService struct {
+	service.UserService
+}
+
+func (stubUserService) GetByIDs(ctx context.Context, ids []int32) ([]*entity.User, error) {
+	return make([]*entity.User, 0), nil
+}
+
 // setupAttachmentUpload 用内存 SQLite 初始化全局 dal.Q,并按生产装配(NewAttachmentService)
 // 接线存储桩,返回服务与桩。做法与 service/storage/impl/local_upload_test.go 的 setupLocalUpload
 // 一致:共享内存 DSN、连接数压到 1、只迁移 attachment 表、备份全局 Q 并在 t.Cleanup 恢复。
@@ -115,6 +124,7 @@ func setupAttachmentUpload(t *testing.T) (service.AttachmentService, *stubFileSt
 	svc := NewAttachmentService(
 		&stubOptionService{attachmentType: consts.AttachmentTypeLocal},
 		&stubStorageComposite{storage: stub},
+		stubUserService{},
 	)
 	return svc, stub
 }
