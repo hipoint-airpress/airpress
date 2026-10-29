@@ -59,6 +59,7 @@ var AllProperty = []Property{
 	StatisticsCode,
 	GlobalAbsolutePathEnabled,
 	DefaultEditor,
+	ThirdPartyJSCDN,
 	PostPermalinkType,
 	SheetPermalinkType,
 	CategoriesPrefix,
