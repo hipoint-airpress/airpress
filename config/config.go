@@ -66,13 +66,13 @@ func NewConfig() *Config {
 			*path = temp
 		}
 	}
-	normalizeDir(&conf.AirPress.LogDir, "log")
-	normalizeDir(&conf.AirPress.TemplateDir, "resources/template")
-	normalizeDir(&conf.AirPress.AdminResourcesDir, "resources/admin")
+	normalizeDir(&conf.AirPress.LogDir, consts.AirPressLogDir)
+	normalizeDir(&conf.AirPress.TemplateDir, consts.AirPressTemplateDir)
+	normalizeDir(&conf.AirPress.AdminResourcesDir, consts.AirPressAdminResourcesDir)
 	normalizeDir(&conf.AirPress.UploadDir, consts.AirPressUploadDir)
-	normalizeDir(&conf.AirPress.ThemeDir, "resources/template/theme")
+	normalizeDir(&conf.AirPress.ThemeDir, consts.AirPressThemeDir)
 	if conf.SQLite3 != nil && conf.SQLite3.Enable {
-		normalizeDir(&conf.SQLite3.File, "airpress.db")
+		normalizeDir(&conf.SQLite3.File, consts.AirPressDefaultSQLiteFileName)
 	}
 	if !util.FileIsExisted(conf.AirPress.TemplateDir) {
 		panic("template dir: " + conf.AirPress.TemplateDir + " not exist")
