@@ -18,12 +18,16 @@ import (
 type UserHandler struct {
 	UserService         service.UserService
 	TwoFactorMFAService service.TwoFactorTOTPMFAService
+	RecoveryCodeService service.RecoveryCodeService
+	OptionService       service.OptionService
 }
 
-func NewUserHandler(userService service.UserService, twoFactorMFAService service.TwoFactorTOTPMFAService) *UserHandler {
+func NewUserHandler(userService service.UserService, twoFactorMFAService service.TwoFactorTOTPMFAService, recoveryCodeService service.RecoveryCodeService, optionService service.OptionService) *UserHandler {
 	return &UserHandler{
 		UserService:         userService,
 		TwoFactorMFAService: twoFactorMFAService,
+		RecoveryCodeService: recoveryCodeService,
+		OptionService:       optionService,
 	}
 }
 
@@ -32,7 +36,14 @@ func (u *UserHandler) GetCurrentUserProfile(ctx *gin.Context) (interface{}, erro
 	if !ok {
 		return nil, xerr.Forbidden.New("authorized user nil").WithStatus(xerr.StatusForbidden)
 	}
-	return u.UserService.ConvertToDTO(ctx, user), nil
+	userDTO := u.UserService.ConvertToDTO(ctx, user)
+	policy, err := u.OptionService.GetMFAPolicy(ctx)
+	if err != nil {
+		return nil, err
+	}
+	userDTO.MFARequired = policy.Requires(user.Role)
+	userDTO.MFAEnrollmentRequired = userDTO.MFARequired && user.MfaType == consts.MFANone
+	return userDTO, nil
 }
 
 func (u *UserHandler) UpdateUserProfile(ctx *gin.Context) (interface{}, error) {
@@ -108,6 +119,45 @@ func (u *UserHandler) GenerateMFAQRCode(ctx *gin.Context) (interface{}, error) {
 	} else {
 		return nil, xerr.WithMsg(nil, "Not supported authentication").WithStatus(xerr.StatusBadRequest)
 	}
+}
+
+func (u *UserHandler) GenerateRecoveryCodes(ctx *gin.Context) (interface{}, error) {
+	type Param struct {
+		AuthCode string `json:"authcode" binding:"required,gte=6,lte=14"`
+	}
+	recoveryParam := &Param{}
+	if err := ctx.ShouldBindJSON(recoveryParam); err != nil {
+		return nil, xerr.WithStatus(err, xerr.StatusBadRequest).WithMsg("parameter error")
+	}
+
+	user, ok := impl.GetAuthorizedUser(ctx)
+	if !ok || user == nil {
+		return nil, xerr.Forbidden.New("").WithMsg("unauthorized").WithStatus(xerr.StatusForbidden)
+	}
+	if user.MfaType == consts.MFANone {
+		return nil, xerr.WithStatus(nil, xerr.StatusBadRequest).WithMsg("请先开启两步验证")
+	}
+	if !u.TwoFactorMFAService.ValidateTFACode(user.MfaKey, recoveryParam.AuthCode) {
+		return nil, xerr.WithStatus(nil, xerr.StatusBadRequest).WithMsg("两步验证码验证错误")
+	}
+
+	codes, err := u.RecoveryCodeService.Generate(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"codes": codes}, nil
+}
+
+func (u *UserHandler) GetRecoveryCodeCount(ctx *gin.Context) (interface{}, error) {
+	user, ok := impl.GetAuthorizedUser(ctx)
+	if !ok || user == nil {
+		return nil, xerr.Forbidden.New("").WithMsg("unauthorized").WithStatus(xerr.StatusForbidden)
+	}
+	count, err := u.RecoveryCodeService.CountRemaining(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"remaining": count}, nil
 }
 
 func (u *UserHandler) UpdateMFA(ctx *gin.Context) (interface{}, error) {

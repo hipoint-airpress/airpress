@@ -16,6 +16,8 @@ type PostAssembler interface {
 	BasePostAssembler
 	ConvertToListVO(ctx context.Context, posts []*entity.Post) ([]*vo.Post, error)
 	ConvertToDetailVO(ctx context.Context, post *entity.Post) (*vo.PostDetailVO, error)
+	ConvertToAdminListVO(ctx context.Context, posts []*entity.Post) ([]*vo.Post, error)
+	ConvertToAdminDetailVO(ctx context.Context, post *entity.Post) (*vo.PostDetailVO, error)
 	ConvertToDetailVOs(ctx context.Context, posts []*entity.Post) ([]*vo.PostDetailVO, error)
 	ConvertToArchiveYearVOs(ctx context.Context, posts []*entity.Post) ([]*vo.ArchiveYear, error)
 	ConvertTOArchiveMonthVOs(ctx context.Context, posts []*entity.Post) ([]*vo.ArchiveMonth, error)
@@ -30,6 +32,7 @@ func NewPostAssembler(basePostService service.BasePostService,
 	postCommentService service.PostCommentService,
 	metaService service.MetaService,
 	basePostAssembler BasePostAssembler,
+	userService service.UserService,
 ) PostAssembler {
 	return &postAssembler{
 		BasePostAssembler:   basePostAssembler,
@@ -41,6 +44,7 @@ func NewPostAssembler(basePostService service.BasePostService,
 		TagService:          tagService,
 		CategoryService:     categoryService,
 		MetaService:         metaService,
+		UserService:         userService,
 	}
 }
 
@@ -54,6 +58,7 @@ type postAssembler struct {
 	CategoryService     service.CategoryService
 	PostCommentService  service.PostCommentService
 	MetaService         service.MetaService
+	UserService         service.UserService
 }
 
 func (p *postAssembler) ConvertToListVO(ctx context.Context, posts []*entity.Post) ([]*vo.Post, error) {
@@ -144,6 +149,44 @@ func (p *postAssembler) ConvertToListVO(ctx context.Context, posts []*entity.Pos
 	return postVOs, nil
 }
 
+func (p *postAssembler) ConvertToAdminListVO(ctx context.Context, posts []*entity.Post) ([]*vo.Post, error) {
+	postVOs, err := p.ConvertToListVO(ctx, posts)
+	if err != nil {
+		return nil, err
+	}
+
+	authorIDs := make([]int32, 0, len(posts))
+	seenAuthor := make(map[int32]struct{}, len(posts))
+	for _, post := range posts {
+		if post.AuthorID <= 0 {
+			continue
+		}
+		if _, ok := seenAuthor[post.AuthorID]; ok {
+			continue
+		}
+		seenAuthor[post.AuthorID] = struct{}{}
+		authorIDs = append(authorIDs, post.AuthorID)
+	}
+	users, err := p.UserService.GetByIDs(ctx, authorIDs)
+	if err != nil {
+		return nil, err
+	}
+	authorMap := make(map[int32]*dto.PostAuthor, len(users))
+	for _, user := range users {
+		authorMap[user.ID] = &dto.PostAuthor{
+			ID:       user.ID,
+			Username: user.Username,
+			Nickname: user.Nickname,
+		}
+	}
+	for i, post := range posts {
+		if i < len(postVOs) {
+			postVOs[i].Author = authorMap[post.AuthorID]
+		}
+	}
+	return postVOs, nil
+}
+
 func (p *postAssembler) ConvertToDetailVO(ctx context.Context, post *entity.Post) (*vo.PostDetailVO, error) {
 	if post == nil {
 		return nil, nil
@@ -203,6 +246,28 @@ func (p *postAssembler) ConvertToDetailVO(ctx context.Context, post *entity.Post
 	postDetailVO.Metas = metaDTOs
 
 	return postDetailVO, nil
+}
+
+func (p *postAssembler) ConvertToAdminDetailVO(ctx context.Context, post *entity.Post) (*vo.PostDetailVO, error) {
+	detail, err := p.ConvertToDetailVO(ctx, post)
+	if err != nil {
+		return nil, err
+	}
+	if post == nil || post.AuthorID <= 0 {
+		return detail, nil
+	}
+	users, err := p.UserService.GetByIDs(ctx, []int32{post.AuthorID})
+	if err != nil {
+		return nil, err
+	}
+	if len(users) > 0 {
+		detail.Author = &dto.PostAuthor{
+			ID:       users[0].ID,
+			Username: users[0].Username,
+			Nickname: users[0].Nickname,
+		}
+	}
+	return detail, nil
 }
 
 func (p *postAssembler) ConvertToDetailVOs(ctx context.Context, posts []*entity.Post) ([]*vo.PostDetailVO, error) {

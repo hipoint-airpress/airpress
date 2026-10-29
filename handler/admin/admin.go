@@ -68,7 +68,14 @@ func (a *AdminHandler) AuthPreCheck(ctx *gin.Context) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &dto.LoginPreCheckDTO{NeedMFACode: a.TwoFactorMFAService.UseMFA(user.MfaType)}, nil
+	enrollmentRequired, err := a.AdminService.MFAEnrollmentRequired(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+	return &dto.LoginPreCheckDTO{
+		NeedMFACode:           a.TwoFactorMFAService.UseMFA(user.MfaType),
+		MFAEnrollmentRequired: enrollmentRequired,
+	}, nil
 }
 
 // Auth godoc

@@ -24,6 +24,7 @@ func init() {
 		NewTagHandler,
 		NewThemeHandler,
 		NewUserHandler,
+		NewUserManagementHandler,
 		NewEmailHandler,
 	)
 }

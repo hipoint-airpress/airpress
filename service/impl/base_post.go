@@ -24,10 +24,11 @@ import (
 type basePostServiceImpl struct {
 	OptionService      service.OptionService
 	BaseCommentService service.BaseCommentService
+	ContentURLService  service.ContentURLService
 	CounterCache       *util.CounterCache[int32]
 }
 
-func NewBasePostService(optionService service.OptionService, baseCommentService service.BaseCommentService) service.BasePostService {
+func NewBasePostService(optionService service.OptionService, baseCommentService service.BaseCommentService, contentURLService service.ContentURLService) service.BasePostService {
 	counterCache := util.NewCounterCache(time.Second*5, nil, func(postID int32, count int64) {
 		ctx := context.Background()
 		postDAL := dal.GetQueryByCtx(ctx).Post
@@ -40,6 +41,7 @@ func NewBasePostService(optionService service.OptionService, baseCommentService 
 		CounterCache:       counterCache,
 		OptionService:      optionService,
 		BaseCommentService: baseCommentService,
+		ContentURLService:  contentURLService,
 	}
 	return b
 }
@@ -206,6 +208,9 @@ func (b basePostServiceImpl) GetByPostID(ctx context.Context, postID int32) (*en
 	if err != nil {
 		return nil, WrapDBErr(err)
 	}
+	if err := ensureAuthorOwnsPost(ctx, post); err != nil {
+		return nil, err
+	}
 	return post, nil
 }
 
@@ -231,6 +236,13 @@ func (b basePostServiceImpl) Delete(ctx context.Context, postID int32) error {
 		postMetaDAL := tx.Meta
 		postCommentDAL := tx.Comment
 
+		post, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(postID)).First()
+		if err != nil {
+			return WrapDBErr(err)
+		}
+		if err := ensureAuthorOwnsPost(ctx, post); err != nil {
+			return err
+		}
 		deleteResult, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(postID)).Delete()
 		if err != nil {
 			return WrapDBErr(err)
@@ -254,6 +266,11 @@ func (b basePostServiceImpl) Delete(ctx context.Context, postID int32) error {
 		if err != nil {
 			return WrapDBErr(err)
 		}
+		postAttachmentDAL := tx.PostAttachment
+		_, err = postAttachmentDAL.WithContext(ctx).Where(postAttachmentDAL.PostID.Eq(postID)).Delete()
+		if err != nil {
+			return WrapDBErr(err)
+		}
 		return nil
 	})
 	return err
@@ -269,6 +286,9 @@ func (b basePostServiceImpl) UpdateStatus(ctx context.Context, postID int32, sta
 	if err != nil {
 		return nil, WrapDBErr(err)
 	}
+	if err := ensureAuthorOwnsPost(ctx, post); err != nil {
+		return nil, err
+	}
 	updateResult, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(postID)).UpdateColumnSimple(postDAL.Status.Value(status))
 	if err != nil {
 		return nil, WrapDBErr(err)
@@ -281,6 +301,15 @@ func (b basePostServiceImpl) UpdateStatus(ctx context.Context, postID int32, sta
 }
 
 func (b basePostServiceImpl) DeleteBatch(ctx context.Context, postIDs []int32) error {
+	uniquePostIDMap := make(map[int32]struct{}, len(postIDs))
+	for _, postID := range postIDs {
+		uniquePostIDMap[postID] = struct{}{}
+	}
+	uniqueIDs := make([]int32, 0, len(uniquePostIDMap))
+	for postID := range uniquePostIDMap {
+		uniqueIDs = append(uniqueIDs, postID)
+	}
+
 	err := dal.GetQueryByCtx(ctx).Transaction(func(tx *dal.Query) error {
 		postDAL := tx.Post
 		postTagDAL := tx.PostTag
@@ -288,32 +317,90 @@ func (b basePostServiceImpl) DeleteBatch(ctx context.Context, postIDs []int32) e
 		postMetaDAL := tx.Meta
 		postCommentDAL := tx.Comment
 
-		deleteResult, err := postDAL.WithContext(ctx).Where(postDAL.ID.In(postIDs...)).Delete()
+		posts, err := postDAL.WithContext(ctx).Where(postDAL.ID.In(uniqueIDs...)).Find()
 		if err != nil {
 			return WrapDBErr(err)
 		}
-		if deleteResult.RowsAffected != 1 {
+		for _, post := range posts {
+			if err := ensureAuthorOwnsPost(ctx, post); err != nil {
+				return err
+			}
+		}
+
+		deleteResult, err := postDAL.WithContext(ctx).Where(postDAL.ID.In(uniqueIDs...)).Delete()
+		if err != nil {
+			return WrapDBErr(err)
+		}
+		if deleteResult.RowsAffected != int64(len(uniqueIDs)) {
 			return xerr.NoType.New("").WithMsg("delete post failed")
 		}
-		_, err = postTagDAL.WithContext(ctx).Where(postTagDAL.PostID.In(postIDs...)).Delete()
+		_, err = postTagDAL.WithContext(ctx).Where(postTagDAL.PostID.In(uniqueIDs...)).Delete()
 		if err != nil {
 			return WrapDBErr(err)
 		}
-		_, err = postCategoryDAL.WithContext(ctx).Where(postCategoryDAL.PostID.In(postIDs...)).Delete()
+		_, err = postCategoryDAL.WithContext(ctx).Where(postCategoryDAL.PostID.In(uniqueIDs...)).Delete()
 		if err != nil {
 			return WrapDBErr(err)
 		}
-		_, err = postMetaDAL.WithContext(ctx).Where(postMetaDAL.PostID.In(postIDs...)).Delete()
+		_, err = postMetaDAL.WithContext(ctx).Where(postMetaDAL.PostID.In(uniqueIDs...)).Delete()
 		if err != nil {
 			return WrapDBErr(err)
 		}
-		_, err = postCommentDAL.WithContext(ctx).Where(postCommentDAL.PostID.In(postIDs...)).Delete()
+		_, err = postCommentDAL.WithContext(ctx).Where(postCommentDAL.PostID.In(uniqueIDs...)).Delete()
+		if err != nil {
+			return WrapDBErr(err)
+		}
+		postAttachmentDAL := tx.PostAttachment
+		_, err = postAttachmentDAL.WithContext(ctx).Where(postAttachmentDAL.PostID.In(uniqueIDs...)).Delete()
 		if err != nil {
 			return WrapDBErr(err)
 		}
 		return nil
 	})
 	return err
+}
+
+// syncPostAttachments 按正文引用重建文章与附件的关联。
+// 不再限制附件归属：管理员代传、历史无归属的附件也会被关联，
+// 避免文章转交后新作者保存正文时丢失关联。
+func syncPostAttachments(ctx context.Context, tx *dal.Query, post *entity.Post) error {
+	postAttachmentDAL := tx.PostAttachment
+	if _, err := postAttachmentDAL.WithContext(ctx).Where(postAttachmentDAL.PostID.Eq(post.ID)).Delete(); err != nil {
+		return WrapDBErr(err)
+	}
+	content := post.OriginalContent + "\n" + post.FormatContent + "\n" + post.Thumbnail
+	keys := collectAttachmentKeys(content)
+	if len(keys) == 0 {
+		return nil
+	}
+	attachmentDAL := tx.Attachment
+	attachments, err := attachmentDAL.WithContext(ctx).
+		Where(attachmentDAL.Path.In(keys...)).
+		Or(attachmentDAL.FileKey.In(keys...)).
+		Order(attachmentDAL.ID).
+		Find()
+	if err != nil {
+		return WrapDBErr(err)
+	}
+	seen := make(map[int32]struct{}, len(attachments))
+	records := make([]*entity.PostAttachment, 0, len(attachments))
+	for _, attachment := range attachments {
+		if _, ok := seen[attachment.ID]; ok {
+			continue
+		}
+		seen[attachment.ID] = struct{}{}
+		records = append(records, &entity.PostAttachment{
+			PostID:       post.ID,
+			AttachmentID: attachment.ID,
+		})
+	}
+	if len(records) == 0 {
+		return nil
+	}
+	if err := postAttachmentDAL.WithContext(ctx).Create(records...); err != nil {
+		return WrapDBErr(err)
+	}
+	return nil
 }
 
 func (b basePostServiceImpl) CreateOrUpdate(ctx context.Context, post *entity.Post, categoryIDs, tagIDs []int32, metas []param.Meta) (*entity.Post, error) {
@@ -327,6 +414,9 @@ func (b basePostServiceImpl) CreateOrUpdate(ctx context.Context, post *entity.Po
 
 		// create post
 		if post.ID == 0 {
+			if user, ok := currentUser(ctx); ok {
+				post.AuthorID = user.ID
+			}
 			postCount, err := postDAL.WithContext(ctx).Select(field.Star).Omit(postDAL.UpdateTime).Where(postDAL.Slug.Eq(post.Slug)).Count()
 			if err != nil {
 				return WrapDBErr(err)
@@ -349,6 +439,16 @@ func (b basePostServiceImpl) CreateOrUpdate(ctx context.Context, post *entity.Po
 			}
 		} else {
 			// update post
+			existing, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(post.ID)).First()
+			if err != nil {
+				return WrapDBErr(err)
+			}
+			if err := ensureAuthorOwnsPost(ctx, existing); err != nil {
+				return err
+			}
+			// 作者归属不允许通过编辑请求修改。
+			post.AuthorID = existing.AuthorID
+
 			slugCount, err := postDAL.WithContext(ctx).Where(postDAL.Slug.Eq(post.Slug), postDAL.ID.Neq(post.ID)).Count()
 			if err != nil {
 				return WrapDBErr(err)
@@ -443,6 +543,10 @@ func (b basePostServiceImpl) CreateOrUpdate(ctx context.Context, post *entity.Po
 			}
 		}
 
+		if err := syncPostAttachments(ctx, tx, post); err != nil {
+			return err
+		}
+
 		return nil
 	})
 	if err != nil {
@@ -466,6 +570,15 @@ func (b basePostServiceImpl) UpdateStatusBatch(ctx context.Context, status const
 	}
 	err := dal.GetQueryByCtx(ctx).Transaction(func(tx *dal.Query) error {
 		postDAL := tx.Post
+		posts, err := postDAL.WithContext(ctx).Where(postDAL.ID.In(uniqueIDs...)).Find()
+		if err != nil {
+			return WrapDBErr(err)
+		}
+		for _, post := range posts {
+			if err := ensureAuthorOwnsPost(ctx, post); err != nil {
+				return err
+			}
+		}
 		updateResult, err := postDAL.WithContext(ctx).Where(postDAL.ID.In(uniqueIDs...)).UpdateColumnSimple(postDAL.Status.Value(status))
 		if err != nil {
 			return WrapDBErr(err)
@@ -487,21 +600,47 @@ func (b basePostServiceImpl) UpdateStatusBatch(ctx context.Context, status const
 }
 
 func (b basePostServiceImpl) UpdateDraftContent(ctx context.Context, postID int32, content, originalContent string) (*entity.Post, error) {
-	postDAL := dal.GetQueryByCtx(ctx).Post
-	post, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(postID)).First()
+	content, err := b.ContentURLService.Normalize(ctx, content)
 	if err != nil {
-		return nil, WrapDBErr(err)
+		return nil, err
 	}
-	if post.OriginalContent != content {
-		updateResult, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(postID)).UpdateColumnSimple(postDAL.OriginalContent.Value(originalContent), postDAL.FormatContent.Value(content))
+	originalContent, err = b.ContentURLService.Normalize(ctx, originalContent)
+	if err != nil {
+		return nil, err
+	}
+	var post *entity.Post
+	err = dal.GetQueryByCtx(ctx).Transaction(func(tx *dal.Query) error {
+		postDAL := tx.Post
+		current, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(postID)).First()
 		if err != nil {
-			return nil, WrapDBErr(err)
+			return WrapDBErr(err)
 		}
-		if updateResult.RowsAffected != 1 {
-			return nil, xerr.NoType.New("").WithMsg("update post content failed")
+		if err := ensureAuthorOwnsPost(ctx, current); err != nil {
+			return err
 		}
+		if current.OriginalContent != content {
+			updateResult, err := postDAL.WithContext(ctx).Where(postDAL.ID.Eq(postID)).
+				UpdateColumnSimple(postDAL.OriginalContent.Value(originalContent), postDAL.FormatContent.Value(content))
+			if err != nil {
+				return WrapDBErr(err)
+			}
+			if updateResult.RowsAffected != 1 {
+				return xerr.NoType.New("").WithMsg("update post content failed")
+			}
+		}
+		updated := *current
+		updated.OriginalContent = originalContent
+		updated.FormatContent = content
+		if err := syncPostAttachments(ctx, tx, &updated); err != nil {
+			return err
+		}
+		current.OriginalContent = content
+		post = current
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	post.OriginalContent = content
 	return post, nil
 }
 

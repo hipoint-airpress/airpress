@@ -57,6 +57,7 @@ type Server struct {
 	TagHandler                *admin.TagHandler
 	ThemeHandler              *admin.ThemeHandler
 	UserHandler               *admin.UserHandler
+	UserManagementHandler     *admin.UserManagementHandler
 	EmailHandler              *admin.EmailHandler
 	IndexHandler              *content.IndexHandler
 	FeedHandler               *content.FeedHandler
@@ -113,6 +114,7 @@ type ServerParams struct {
 	TagHandler                *admin.TagHandler
 	ThemeHandler              *admin.ThemeHandler
 	UserHandler               *admin.UserHandler
+	UserManagementHandler     *admin.UserManagementHandler
 	EmailHandler              *admin.EmailHandler
 	IndexHandler              *content.IndexHandler
 	FeedHandler               *content.FeedHandler
@@ -176,6 +178,7 @@ func NewServer(param ServerParams, lifecycle fx.Lifecycle) *Server {
 		TagHandler:                param.TagHandler,
 		ThemeHandler:              param.ThemeHandler,
 		UserHandler:               param.UserHandler,
+		UserManagementHandler:     param.UserManagementHandler,
 		EmailHandler:              param.EmailHandler,
 		OptionService:             param.OptionService,
 		ThemeService:              param.ThemeService,
@@ -231,7 +234,7 @@ func (s *Server) wrapHandler(handler wrapperHandler) gin.HandlerFunc {
 		if err != nil {
 			s.logger.Error("handler error", zap.Error(err))
 			status := xerr.GetHTTPStatus(err)
-			ctx.JSON(status, &dto.BaseDTO{Status: status, Message: xerr.GetMessage(err)})
+			ctx.JSON(status, &dto.BaseDTO{Status: status, Message: xerr.GetMessage(err), Data: xerr.GetData(err)})
 			return
 		}
 

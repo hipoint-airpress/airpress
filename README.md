@@ -32,6 +32,21 @@ Upstream has not received new commits since May 2024, so AirPress is now the act
 
 Thanks to the [Halo](https://github.com/halo-dev) project team, who inspired this project. The front-end is a project fork from Halo.
 
+## ✨ Highlights over upstream Sonic
+
+On top of bug fixes and dependency updates, AirPress adds the following capabilities compared with [go-sonic/sonic](https://github.com/go-sonic/sonic):
+
+- **Multi-user with role-based access control** — Three built-in roles (Author / Editor / Super Admin) with per-module permissions and content ownership. Authors can only see and manage their own posts and attachments; accounts are created by administrators (no public registration), and passwords must satisfy a strength policy.
+- **Stronger authentication** — TOTP two-factor authentication with a global enforcement policy (`NONE` / `ALL` / `ADMIN_EDITOR`), one-time recovery codes, login and MFA rate limiting with lockout, and single-session tokens that are revoked when a role changes or an account is disabled, deleted or has its password reset.
+- **Enhanced attachment management**
+  - Attachments are stored under a `{type}/{year}/{month}` directory layout with random file names, while document files keep their original names. MinIO and Aliyun OSS set `Content-Disposition` so downloads restore the original filename. Existing files are never overwritten.
+  - Attachments belong to users and are linked to the posts that reference them, so a post and its attachments can be transferred to another author — individually or in bulk from the post list.
+  - Deleting an attachment that is still referenced by posts requires an explicit confirmation and lists the referencing posts; the attachment list shows its owner.
+- **Domain-independent attachment URLs** — Attachment references in posts, pages and journals are stored as relative paths and resolved to full URLs at read time, so changing the blog domain or object storage does not break historical images. A one-off migration command cleans up existing content.
+- **Custom post/page templates** — Themes can expose multiple templates, and each post or page can choose one from the editor. Template functions were extended with `listLinksGroupByTeam` (links grouped by team) and slugs in the category tree.
+- **Configurable third-party JS CDN** — The CDN root used for editor extensions and the comment component can be configured in the admin console, which helps in networks where the default jsDelivr is unreachable.
+- **Packaging and maintenance** — Docker images, an updated default theme and admin console, server-side Markdown rendering, and fixes for menu ordering and other issues.
+
 ## 🚀 Features:
 - Support multiple types of databases: SQLite、MySQL(TODO: PostgreSQL)
 - Small: The installation file is only 10mb size

@@ -93,11 +93,22 @@ func dbMigrate() {
 	db := DB.Session(&gorm.Session{
 		Logger: DB.Logger.LogMode(logger.Warn),
 	})
+	hasPostAttachment := db.Migrator().HasTable(&entity.PostAttachment{})
 	err := db.AutoMigrate(&entity.Attachment{}, &entity.Category{}, &entity.Comment{}, &entity.CommentBlack{}, &entity.Journal{},
 		&entity.Link{}, &entity.Log{}, &entity.Menu{}, &entity.Meta{}, &entity.Option{}, &entity.Photo{}, &entity.Post{},
-		&entity.PostCategory{}, &entity.PostTag{}, &entity.Tag{}, &entity.ThemeSetting{}, &entity.User{})
+		&entity.PostAttachment{}, &entity.PostCategory{}, &entity.PostTag{}, &entity.Tag{}, &entity.ThemeSetting{},
+		&entity.User{}, &entity.MfaRecoveryCode{})
 	if err != nil {
 		airpressLog.Fatal("failed auto migrate db", zap.Error(err))
+	}
+	if err := migrateUserRBAC(db); err != nil {
+		airpressLog.Fatal("failed to migrate user rbac", zap.Error(err))
+	}
+	// 关联表首次创建时回填历史文章，之后启动不再重复扫描。
+	if !hasPostAttachment {
+		if err := migratePostAttachment(db); err != nil {
+			airpressLog.Fatal("failed to migrate post attachment; drop table post_attachment and restart to retry", zap.Error(err))
+		}
 	}
 }
 

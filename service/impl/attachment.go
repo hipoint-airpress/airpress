@@ -3,6 +3,7 @@ package impl
 import (
 	"context"
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"os"
 	"strings"
@@ -24,6 +25,42 @@ import (
 type attachmentServiceImpl struct {
 	OptionService        service.OptionService
 	FileStorageComposite storage.FileStorageComposite
+	UserService          service.UserService
+}
+
+// fillOwners 批量填充附件归属人，避免列表逐条查询用户。
+func (a *attachmentServiceImpl) fillOwners(ctx context.Context, attachments []*entity.Attachment, dtos []*dto.AttachmentDTO) error {
+	userIDs := make([]int32, 0, len(attachments))
+	seen := make(map[int32]struct{}, len(attachments))
+	for _, attachment := range attachments {
+		if attachment.UserID <= 0 {
+			continue
+		}
+		if _, ok := seen[attachment.UserID]; ok {
+			continue
+		}
+		seen[attachment.UserID] = struct{}{}
+		userIDs = append(userIDs, attachment.UserID)
+	}
+	if len(userIDs) == 0 {
+		return nil
+	}
+	users, err := a.UserService.GetByIDs(ctx, userIDs)
+	if err != nil {
+		return err
+	}
+	owners := make(map[int32]*dto.AttachmentOwner, len(users))
+	for _, user := range users {
+		owners[user.ID] = &dto.AttachmentOwner{
+			ID:       user.ID,
+			Username: user.Username,
+			Nickname: user.Nickname,
+		}
+	}
+	for i, attachment := range attachments {
+		dtos[i].Owner = owners[attachment.UserID]
+	}
+	return nil
 }
 
 func (a *attachmentServiceImpl) ConvertToDTOs(ctx context.Context, attachments []*entity.Attachment) ([]*dto.AttachmentDTO, error) {
@@ -54,13 +91,17 @@ func (a *attachmentServiceImpl) ConvertToDTOs(ctx context.Context, attachments [
 		dto.Path = path
 		dto.ThumbPath = thumbPath
 	}
+	if err := a.fillOwners(ctx, attachments, dtos); err != nil {
+		return nil, err
+	}
 	return dtos, nil
 }
 
-func NewAttachmentService(optionService service.OptionService, fileStorageComposite storage.FileStorageComposite) service.AttachmentService {
+func NewAttachmentService(optionService service.OptionService, fileStorageComposite storage.FileStorageComposite, userService service.UserService) service.AttachmentService {
 	return &attachmentServiceImpl{
 		FileStorageComposite: fileStorageComposite,
 		OptionService:        optionService,
+		UserService:          userService,
 	}
 }
 
@@ -74,7 +115,7 @@ func (a *attachmentServiceImpl) getThumbURL(ctx context.Context, attachmentType 
 }
 
 func (a *attachmentServiceImpl) ConvertToDTO(ctx context.Context, attachment *entity.Attachment) (*dto.AttachmentDTO, error) {
-	dto := &dto.AttachmentDTO{
+	attachmentDTO := &dto.AttachmentDTO{
 		ID:             attachment.ID,
 		Name:           attachment.Name,
 		Path:           attachment.Path,
@@ -95,9 +136,12 @@ func (a *attachmentServiceImpl) ConvertToDTO(ctx context.Context, attachment *en
 	if err != nil {
 		return nil, err
 	}
-	dto.Path = path
-	dto.ThumbPath = thumbPath
-	return dto, nil
+	attachmentDTO.Path = path
+	attachmentDTO.ThumbPath = thumbPath
+	if err := a.fillOwners(ctx, []*entity.Attachment{attachment}, []*dto.AttachmentDTO{attachmentDTO}); err != nil {
+		return nil, err
+	}
+	return attachmentDTO, nil
 }
 
 func (a *attachmentServiceImpl) Page(ctx context.Context, queryParam *param.AttachmentQuery) ([]*entity.Attachment, int64, error) {
@@ -123,6 +167,30 @@ func (a *attachmentServiceImpl) Page(ctx context.Context, queryParam *param.Atta
 	if queryParam.MediaType != "" {
 		attachmentDo = attachmentDo.Where(attachmentDAL.MediaType.Eq(queryParam.MediaType))
 	}
+	if user, ok := currentUser(ctx); ok && user.Role == consts.UserRoleAuthor {
+		// 作者可见范围 = 自己上传的附件 + 自己文章关联的附件。
+		// 管理员代传或历史无归属的附件不会转移 user_id，但文章转交后作者仍应能看到它们。
+		query := dal.GetQueryByCtx(ctx)
+		ownPostIDs := make([]int32, 0)
+		if err := query.Post.WithContext(ctx).
+			Where(query.Post.AuthorID.Eq(user.ID)).
+			Pluck(query.Post.ID, &ownPostIDs); err != nil {
+			return nil, 0, WrapDBErr(err)
+		}
+		linkedAttachmentIDs := make([]int32, 0)
+		if len(ownPostIDs) > 0 {
+			if err := query.PostAttachment.WithContext(ctx).
+				Where(query.PostAttachment.PostID.In(ownPostIDs...)).
+				Pluck(query.PostAttachment.AttachmentID, &linkedAttachmentIDs); err != nil {
+				return nil, 0, WrapDBErr(err)
+			}
+		}
+		authorScope := attachmentDAL.WithContext(ctx).Where(attachmentDAL.UserID.Eq(user.ID))
+		if len(linkedAttachmentIDs) > 0 {
+			authorScope = authorScope.Or(attachmentDAL.ID.In(linkedAttachmentIDs...))
+		}
+		attachmentDo = attachmentDo.Where(authorScope)
+	}
 	attachments, totalCount, err := attachmentDo.FindByPage(queryParam.PageNum*queryParam.PageSize, queryParam.PageSize)
 	if err != nil {
 		return nil, 0, WrapDBErr(err)
@@ -136,7 +204,42 @@ func (a *attachmentServiceImpl) GetAttachment(ctx context.Context, attachmentID 
 	if err != nil {
 		return nil, WrapDBErr(err)
 	}
+	if err := ensureAuthorOwnsAttachment(ctx, attachment); err != nil {
+		// 作者对自己文章关联的附件（可能是管理员代传或历史无归属）应可只读访问。
+		linked, linkErr := canAuthorReadLinkedAttachment(ctx, attachmentID)
+		if linkErr != nil {
+			return nil, linkErr
+		}
+		if !linked {
+			return nil, err
+		}
+	}
 	return attachment, nil
+}
+
+// canAuthorReadLinkedAttachment 判断当前 Author 是否通过自己的文章关联到该附件。
+func canAuthorReadLinkedAttachment(ctx context.Context, attachmentID int32) (bool, error) {
+	user, ok := currentUser(ctx)
+	if !ok || user.Role != consts.UserRoleAuthor {
+		return false, nil
+	}
+	query := dal.GetQueryByCtx(ctx)
+	ownPostIDs := make([]int32, 0)
+	if err := query.Post.WithContext(ctx).
+		Where(query.Post.AuthorID.Eq(user.ID)).
+		Pluck(query.Post.ID, &ownPostIDs); err != nil {
+		return false, WrapDBErr(err)
+	}
+	if len(ownPostIDs) == 0 {
+		return false, nil
+	}
+	count, err := query.PostAttachment.WithContext(ctx).
+		Where(query.PostAttachment.AttachmentID.Eq(attachmentID), query.PostAttachment.PostID.In(ownPostIDs...)).
+		Count()
+	if err != nil {
+		return false, WrapDBErr(err)
+	}
+	return count > 0, nil
 }
 
 func (a *attachmentServiceImpl) Upload(ctx context.Context, fileHeader *multipart.FileHeader) (attachmentDTO *dto.AttachmentDTO, err error) {
@@ -171,6 +274,9 @@ func (a *attachmentServiceImpl) Upload(ctx context.Context, fileHeader *multipar
 		Type:      attachmentDTO.AttachmentType,
 		Width:     attachmentDTO.Width,
 	}
+	if user, ok := currentUser(ctx); ok {
+		attachmentEntity.UserID = user.ID
+	}
 
 	// change file path separator to url separator
 	if err = attachmentDAL.WithContext(ctx).Create(attachmentEntity); err != nil {
@@ -185,43 +291,185 @@ func (a *attachmentServiceImpl) Upload(ctx context.Context, fileHeader *multipar
 	if err != nil {
 		return nil, err
 	}
+	if err := a.fillOwners(ctx, []*entity.Attachment{attachmentEntity}, []*dto.AttachmentDTO{attachmentDTO}); err != nil {
+		return nil, err
+	}
 
 	return attachmentDTO, nil
 }
 
-func (a *attachmentServiceImpl) Delete(ctx context.Context, attachmentID int32) (*entity.Attachment, error) {
+func (a *attachmentServiceImpl) Delete(ctx context.Context, attachmentID int32, force bool) (*entity.Attachment, error) {
 	attachmentDAL := dal.GetQueryByCtx(ctx).Attachment
 	attachment, err := attachmentDAL.WithContext(ctx).Where(attachmentDAL.ID.Eq(attachmentID)).Take()
 	if err != nil {
 		return nil, WrapDBErr(err)
 	}
-	result, err := attachmentDAL.WithContext(ctx).Where(attachmentDAL.ID.Eq(attachmentID)).Delete()
-	if err != nil || result.RowsAffected != 1 {
-		return nil, xerr.WithMsg(err, "delete file failed")
+	if err := ensureAttachmentDeletePermission(ctx, attachment, force); err != nil {
+		return nil, err
 	}
-	fileStorage := a.FileStorageComposite.GetFileStorage(attachment.Type)
-	err = fileStorage.Delete(ctx, attachment.FileKey)
-	if err != nil {
-		return nil, xerr.WithMsg(err, "delete file failed")
+	if !force {
+		postIDs, err := a.referencedPostIDs(ctx, []int32{attachmentID})
+		if err != nil {
+			return nil, err
+		}
+		if len(postIDs) > 0 {
+			posts, err := a.referencedPosts(ctx, postIDs)
+			if err != nil {
+				return nil, err
+			}
+			return nil, newAttachmentReferencedError([]*entity.Attachment{attachment}, len(postIDs), posts)
+		}
+	}
+	if err := a.deleteAttachmentRecord(ctx, attachment); err != nil {
+		return nil, err
 	}
 	return attachment, nil
 }
 
-func (a *attachmentServiceImpl) DeleteBatch(ctx context.Context, ids []int32) (attachments []*entity.Attachment, err error) {
-	attachments = make([]*entity.Attachment, 0)
-	var globalErr error
+func (a *attachmentServiceImpl) DeleteBatch(ctx context.Context, ids []int32, force bool) (attachments []*entity.Attachment, err error) {
+	uniqueIDMap := make(map[int32]struct{}, len(ids))
+	uniqueIDs := make([]int32, 0, len(ids))
 	for _, id := range ids {
-		attachment, err := a.Delete(ctx, id)
+		if _, ok := uniqueIDMap[id]; ok {
+			continue
+		}
+		uniqueIDMap[id] = struct{}{}
+		uniqueIDs = append(uniqueIDs, id)
+	}
+
+	if len(uniqueIDs) == 0 {
+		return make([]*entity.Attachment, 0), nil
+	}
+
+	query := dal.GetQueryByCtx(ctx)
+	existing, err := query.Attachment.WithContext(ctx).Where(query.Attachment.ID.In(uniqueIDs...)).Find()
+	if err != nil {
+		return nil, WrapDBErr(err)
+	}
+	for _, attachment := range existing {
+		if err := ensureAttachmentDeletePermission(ctx, attachment, force); err != nil {
+			return nil, err
+		}
+	}
+	if !force {
+		postIDs, err := a.referencedPostIDs(ctx, uniqueIDs)
 		if err != nil {
+			return nil, err
+		}
+		if len(postIDs) > 0 {
+			posts, err := a.referencedPosts(ctx, postIDs)
+			if err != nil {
+				return nil, err
+			}
+			return nil, newAttachmentReferencedError(existing, len(postIDs), posts)
+		}
+	}
+
+	attachments = make([]*entity.Attachment, 0, len(existing))
+	var globalErr error
+	for _, attachment := range existing {
+		if err := a.deleteAttachmentRecord(ctx, attachment); err != nil {
 			globalErr = err
 		} else {
 			attachments = append(attachments, attachment)
 		}
 	}
 	if globalErr != nil {
-		return attachments, xerr.NoType.Wrap(err).WithMsg("Failed to delete some files")
+		return attachments, xerr.NoType.Wrap(globalErr).WithMsg("Failed to delete some files")
 	}
 	return attachments, nil
+}
+
+// deleteAttachmentRecord 删除附件关联、附件记录与物理文件，不包含权限与引用检查。
+func (a *attachmentServiceImpl) deleteAttachmentRecord(ctx context.Context, attachment *entity.Attachment) error {
+	err := dal.GetQueryByCtx(ctx).Transaction(func(tx *dal.Query) error {
+		postAttachmentDAL := tx.PostAttachment
+		if _, err := postAttachmentDAL.WithContext(ctx).Where(postAttachmentDAL.AttachmentID.Eq(attachment.ID)).Delete(); err != nil {
+			return WrapDBErr(err)
+		}
+		result, err := tx.Attachment.WithContext(ctx).Where(tx.Attachment.ID.Eq(attachment.ID)).Delete()
+		if err != nil || result.RowsAffected != 1 {
+			return xerr.WithMsg(err, "delete file failed")
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	fileStorage := a.FileStorageComposite.GetFileStorage(attachment.Type)
+	if err := fileStorage.Delete(ctx, attachment.FileKey); err != nil {
+		return xerr.WithMsg(err, "delete file failed")
+	}
+	return nil
+}
+
+// referencedPostIDs 返回引用这些附件的文章 ID。
+// 直接基于关联记录判断，即使文章记录已丢失也视为存在引用。
+func (a *attachmentServiceImpl) referencedPostIDs(ctx context.Context, attachmentIDs []int32) ([]int32, error) {
+	postIDs := make([]int32, 0)
+	if len(attachmentIDs) == 0 {
+		return postIDs, nil
+	}
+	query := dal.GetQueryByCtx(ctx)
+	if err := query.PostAttachment.WithContext(ctx).
+		Where(query.PostAttachment.AttachmentID.In(attachmentIDs...)).
+		Pluck(query.PostAttachment.PostID, &postIDs); err != nil {
+		return nil, WrapDBErr(err)
+	}
+	return postIDs, nil
+}
+
+// referencedPosts 查询引用文章详情，用于删除冲突提示。
+func (a *attachmentServiceImpl) referencedPosts(ctx context.Context, postIDs []int32) ([]*dto.AttachmentReferencedPost, error) {
+	if len(postIDs) == 0 {
+		return []*dto.AttachmentReferencedPost{}, nil
+	}
+	query := dal.GetQueryByCtx(ctx)
+	posts, err := query.Post.WithContext(ctx).
+		Where(query.Post.ID.In(postIDs...)).
+		Order(query.Post.ID).
+		Find()
+	if err != nil {
+		return nil, WrapDBErr(err)
+	}
+	result := make([]*dto.AttachmentReferencedPost, 0, len(posts))
+	for _, post := range posts {
+		result = append(result, &dto.AttachmentReferencedPost{
+			ID:    post.ID,
+			Title: post.Title,
+			Slug:  post.Slug,
+		})
+	}
+	return result, nil
+}
+
+// ensureAttachmentDeletePermission 校验删除权限：作者只能删除自己的附件且不能 force。
+func ensureAttachmentDeletePermission(ctx context.Context, attachment *entity.Attachment, force bool) error {
+	user, ok := currentUser(ctx)
+	if !ok || user.Role != consts.UserRoleAuthor {
+		return nil
+	}
+	if attachment.UserID != user.ID {
+		return xerr.WithStatus(nil, xerr.StatusForbidden).WithMsg("无权删除该附件")
+	}
+	if force {
+		return xerr.WithStatus(nil, xerr.StatusForbidden).WithMsg("作者无权强制删除附件")
+	}
+	return nil
+}
+
+func newAttachmentReferencedError(attachments []*entity.Attachment, count int, posts []*dto.AttachmentReferencedPost) error {
+	data := &dto.AttachmentReferenceData{Posts: posts}
+	if len(attachments) == 1 {
+		return xerr.NoType.New("attachment %d referenced by %d posts", attachments[0].ID, count).
+			WithStatus(xerr.StatusConflict).
+			WithMsg(fmt.Sprintf("该附件已被 %d 篇文章引用，强制删除将同时解除文章关联", count)).
+			WithData(data)
+	}
+	return xerr.NoType.New("attachments referenced by posts").
+		WithStatus(xerr.StatusConflict).
+		WithMsg("选中的附件中有被文章引用的附件，强制删除将同时解除文章关联").
+		WithData(data)
 }
 
 func (a *attachmentServiceImpl) Update(ctx context.Context, id int32, updateParam *param.AttachmentUpdate) (*entity.Attachment, error) {

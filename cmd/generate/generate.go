@@ -52,11 +52,13 @@ func main() {
 		g.GenerateModel("option", gen.FieldType("type", "consts.OptionType")),
 		g.GenerateModel("photo"),
 		g.GenerateModel("post", gen.FieldType("type", "consts.PostType"), gen.FieldType("status", "consts.PostStatus"), gen.FieldType("editor_type", "consts.EditorType")),
+		g.GenerateModel("post_attachment"),
 		g.GenerateModel("post_category"),
 		g.GenerateModel("post_tag"),
 		g.GenerateModel("tag"),
 		g.GenerateModel("theme_setting"),
-		g.GenerateModel("user", gen.FieldType("mfa_type", "consts.MFAType")),
+		g.GenerateModel("user", gen.FieldType("mfa_type", "consts.MFAType"), gen.FieldType("role", "consts.UserRole")),
+		g.GenerateModel("mfa_recovery_code"),
 	)
 
 	// apply diy interfaces on structs or table models

@@ -36,6 +36,7 @@ type Post struct {
 	TopPriority     int32             `gorm:"column:top_priority;type:int;not null" json:"top_priority"`
 	Visits          int64             `gorm:"column:visits;type:bigint;not null" json:"visits"`
 	WordCount       int64             `gorm:"column:word_count;type:bigint;not null" json:"word_count"`
+	AuthorID        int32             `gorm:"column:author_id;type:int;not null;default:0;index:post_author_id" json:"author_id"`
 }
 
 // TableName Post's table name

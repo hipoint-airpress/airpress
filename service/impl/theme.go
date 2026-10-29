@@ -14,6 +14,7 @@ import (
 	"github.com/hipoint-airpress/airpress/config"
 	"github.com/hipoint-airpress/airpress/dal"
 	"github.com/hipoint-airpress/airpress/event"
+	"github.com/hipoint-airpress/airpress/log"
 	"github.com/hipoint-airpress/airpress/model/dto"
 	"github.com/hipoint-airpress/airpress/model/entity"
 	"github.com/hipoint-airpress/airpress/model/property"
@@ -184,12 +185,15 @@ func (t *themeServiceImpl) ListCustomTemplates(ctx context.Context, themeID, pre
 	if err != nil {
 		return nil, err
 	}
+	// 自定义模板是编辑器的可选功能：激活主题缺失或目录不可读时返回空列表，
+	// 不能因此让页面/文章编辑器整体报错。
 	if themeProperty == nil {
-		return nil, xerr.WithMsg(nil, "theme does not exist").WithStatus(xerr.StatusInternalServerError)
+		return []string{}, nil
 	}
 	files, err := os.ReadDir(themeProperty.ThemePath)
 	if err != nil {
-		return nil, xerr.WithMsg(err, "read theme files error").WithStatus(xerr.StatusInternalServerError)
+		log.CtxErrorf(ctx, "read theme templates dir %s: %v", themeProperty.ThemePath, err)
+		return []string{}, nil
 	}
 	result := make([]string, 0)
 	for _, file := range files {

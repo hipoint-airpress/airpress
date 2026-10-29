@@ -64,7 +64,7 @@ func (p *PostHandler) ListPosts(ctx *gin.Context) (interface{}, error) {
 		return nil, err
 	}
 	if postQuery.More == nil || *postQuery.More {
-		postVOs, err := p.PostAssembler.ConvertToListVO(ctx, posts)
+		postVOs, err := p.PostAssembler.ConvertToAdminListVO(ctx, posts)
 		return dto.NewPage(postVOs, totalCount, postQuery.Page), err
 	}
 	postDTOs := make([]*dto.Post, 0)
@@ -133,11 +133,8 @@ func (p *PostHandler) ListPostsByStatus(ctx *gin.Context) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	if postQuery.More == nil {
-		*postQuery.More = false
-	}
-	if postQuery.More == nil {
-		postVOs, err := p.PostAssembler.ConvertToListVO(ctx, posts)
+	if postQuery.More == nil || *postQuery.More {
+		postVOs, err := p.PostAssembler.ConvertToAdminListVO(ctx, posts)
 		return dto.NewPage(postVOs, totalCount, postQuery.Page), err
 	}
 
@@ -174,7 +171,7 @@ func (p *PostHandler) GetByPostID(ctx *gin.Context) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	postDetailVO, err := p.PostAssembler.ConvertToDetailVO(ctx, post)
+	postDetailVO, err := p.PostAssembler.ConvertToAdminDetailVO(ctx, post)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +205,7 @@ func (p *PostHandler) CreatePost(ctx *gin.Context) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	return p.PostAssembler.ConvertToDetailVO(ctx, post)
+	return p.PostAssembler.ConvertToAdminDetailVO(ctx, post)
 }
 
 // UpdatePost godoc
@@ -352,4 +349,24 @@ func (p *PostHandler) PreviewPost(ctx *gin.Context) {
 		return
 	}
 	ctx.String(http.StatusOK, previewPath)
+}
+
+// TransferPostAuthor godoc
+// @Summary      批量转交文章作者
+// @Description  将选中的文章及其关联附件转交给指定作者
+// @Tags         Admin.Post
+// @Accept       json
+// @Produce      json
+// @Param        payload  body      param.TransferPostAuthor  true  "转交参数"
+// @Security     AdminApiKey
+// @Success      200  {object}  dto.BaseDTO{data=dto.TransferPostAuthorResult}
+// @Failure      400  {object}  dto.BaseDTO
+// @Failure      403  {object}  dto.BaseDTO
+// @Router       /admin/posts/author [put]
+func (p *PostHandler) TransferPostAuthor(ctx *gin.Context) (interface{}, error) {
+	transferParam := param.TransferPostAuthor{}
+	if err := ctx.ShouldBindJSON(&transferParam); err != nil {
+		return nil, xerr.WithStatus(err, xerr.StatusBadRequest).WithMsg("parameter error")
+	}
+	return p.PostService.TransferAuthor(ctx, transferParam.PostIDs, transferParam.AuthorID)
 }

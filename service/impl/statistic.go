@@ -127,9 +127,16 @@ func (s statisticServiceImpl) StatisticWithUser(ctx context.Context) (*dto.Stati
 	if err != nil {
 		return nil, err
 	}
+	userDTO := s.UserService.ConvertToDTO(ctx, user)
+	policy, err := s.OptionService.GetMFAPolicy(ctx)
+	if err != nil {
+		return nil, err
+	}
+	userDTO.MFARequired = policy.Requires(user.Role)
+	userDTO.MFAEnrollmentRequired = userDTO.MFARequired && user.MfaType == consts.MFANone
 	statisticDTOWithUser := &dto.StatisticWithUser{
 		Statistic: *statisticDTO,
-		User:      *s.UserService.ConvertToDTO(ctx, user),
+		User:      *userDTO,
 	}
 	return statisticDTOWithUser, nil
 }

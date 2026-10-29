@@ -47,6 +47,7 @@ func newPost(db *gorm.DB, opts ...gen.DOOption) post {
 	_post.TopPriority = field.NewInt32(tableName, "top_priority")
 	_post.Visits = field.NewInt64(tableName, "visits")
 	_post.WordCount = field.NewInt64(tableName, "word_count")
+	_post.AuthorID = field.NewInt32(tableName, "author_id")
 
 	_post.fillFieldMap()
 
@@ -79,6 +80,7 @@ type post struct {
 	TopPriority     field.Int32
 	Visits          field.Int64
 	WordCount       field.Int64
+	AuthorID        field.Int32
 
 	fieldMap map[string]field.Expr
 }
@@ -117,6 +119,7 @@ func (p *post) updateTableName(table string) *post {
 	p.TopPriority = field.NewInt32(table, "top_priority")
 	p.Visits = field.NewInt64(table, "visits")
 	p.WordCount = field.NewInt64(table, "word_count")
+	p.AuthorID = field.NewInt32(table, "author_id")
 
 	p.fillFieldMap()
 
@@ -141,7 +144,7 @@ func (p *post) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (p *post) fillFieldMap() {
-	p.fieldMap = make(map[string]field.Expr, 22)
+	p.fieldMap = make(map[string]field.Expr, 23)
 	p.fieldMap["id"] = p.ID
 	p.fieldMap["type"] = p.Type
 	p.fieldMap["create_time"] = p.CreateTime
@@ -164,6 +167,7 @@ func (p *post) fillFieldMap() {
 	p.fieldMap["top_priority"] = p.TopPriority
 	p.fieldMap["visits"] = p.Visits
 	p.fieldMap["word_count"] = p.WordCount
+	p.fieldMap["author_id"] = p.AuthorID
 }
 
 func (p post) clone(db *gorm.DB) post {

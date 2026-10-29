@@ -19,16 +19,19 @@ type BasePostAssembler interface {
 func NewBasePostAssembler(
 	basePostService service.BasePostService,
 	baseCommentService service.BaseCommentService,
+	contentURLService service.ContentURLService,
 ) BasePostAssembler {
 	return &basePostAssembler{
 		BasePostService:    basePostService,
 		BaseCommentService: baseCommentService,
+		ContentURLService:  contentURLService,
 	}
 }
 
 type basePostAssembler struct {
 	BasePostService    service.BasePostService
 	BaseCommentService service.BaseCommentService
+	ContentURLService  service.ContentURLService
 }
 
 func (p *basePostAssembler) ConvertToSimpleDTO(ctx context.Context, post *entity.Post) (*dto.Post, error) {
@@ -93,10 +96,18 @@ func (p *basePostAssembler) ConvertToDetailDTO(ctx context.Context, post *entity
 	if err != nil {
 		return nil, err
 	}
+	content, err := p.ContentURLService.Resolve(ctx, post.FormatContent)
+	if err != nil {
+		return nil, err
+	}
+	originalContent, err := p.ContentURLService.Resolve(ctx, post.OriginalContent)
+	if err != nil {
+		return nil, err
+	}
 	postDetailDTO := &dto.PostDetail{
 		Post:            *postSimple,
-		OriginalContent: post.OriginalContent,
-		Content:         post.FormatContent,
+		OriginalContent: originalContent,
+		Content:         content,
 	}
 	commentCount, err := p.BaseCommentService.CountByContentID(ctx, post.ID, consts.CommentTypePost, consts.CommentStatusPublished)
 	if err != nil {

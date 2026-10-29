@@ -4,16 +4,23 @@ import "github.com/hipoint-airpress/airpress/consts"
 
 type Post struct {
 	PostMinimal
-	Summary         string `json:"summary"`
-	Thumbnail       string `json:"thumbnail"`
-	Visits          int64  `json:"visits"`
-	DisallowComment bool   `json:"disallowComment"`
-	Password        string `json:"password"`
-	Template        string `json:"template"`
-	TopPriority     int32  `json:"topPriority"`
-	Likes           int64  `json:"likes"`
-	WordCount       int64  `json:"wordCount"`
-	Topped          bool   `json:"topped"`
+	Summary         string      `json:"summary"`
+	Thumbnail       string      `json:"thumbnail"`
+	Visits          int64       `json:"visits"`
+	DisallowComment bool        `json:"disallowComment"`
+	Password        string      `json:"password"`
+	Template        string      `json:"template"`
+	TopPriority     int32       `json:"topPriority"`
+	Likes           int64       `json:"likes"`
+	WordCount       int64       `json:"wordCount"`
+	Topped          bool        `json:"topped"`
+	Author          *PostAuthor `json:"author,omitempty"`
+}
+
+type PostAuthor struct {
+	ID       int32  `json:"id"`
+	Username string `json:"username"`
+	Nickname string `json:"nickname"`
 }
 
 type PostMinimal struct {
@@ -35,4 +42,9 @@ type PostDetail struct {
 	OriginalContent string `json:"originalContent"`
 	Content         string `json:"content"`
 	CommentCount    int64  `json:"commentCount"`
+}
+
+type TransferPostAuthorResult struct {
+	PostCount       int64 `json:"postCount"`
+	AttachmentCount int64 `json:"attachmentCount"`
 }

@@ -3,6 +3,7 @@ package assembler
 import (
 	"context"
 
+	"github.com/hipoint-airpress/airpress/model/dto"
 	"github.com/hipoint-airpress/airpress/model/entity"
 	"github.com/hipoint-airpress/airpress/model/vo"
 	"github.com/hipoint-airpress/airpress/service"
@@ -44,6 +45,8 @@ func (j *journalCommentAssembler) ConvertToWithJournal(ctx context.Context, comm
 		return nil, err
 	}
 	result := make([]*vo.JournalCommentWithJournal, 0, len(comments))
+	// 同一 journal 可能被多条评论引用，缓存转换结果避免重复 Resolve 与查询。
+	journalDTOs := make(map[int32]*dto.Journal, len(journals))
 	for _, comment := range comments {
 		commentDTO, err := j.ConvertToDTO(ctx, comment)
 		if err != nil {
@@ -55,7 +58,15 @@ func (j *journalCommentAssembler) ConvertToWithJournal(ctx context.Context, comm
 		result = append(result, commentWithJournal)
 		journal, ok := journals[comment.PostID]
 		if ok {
-			commentWithJournal.Journal = j.JournalService.ConvertToDTO(journal)
+			journalDTO, cached := journalDTOs[journal.ID]
+			if !cached {
+				journalDTO, err = j.JournalService.ConvertToDTO(ctx, journal)
+				if err != nil {
+					return nil, err
+				}
+				journalDTOs[journal.ID] = journalDTO
+			}
+			commentWithJournal.Journal = journalDTO
 		}
 	}
 	return result, nil

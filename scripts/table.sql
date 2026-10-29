@@ -13,8 +13,10 @@ create table if not exists attachment
     thumb_path  varchar(1023) default '' not null,
     type        int           default 0  not null,
     width       int           default 0  not null,
+    user_id     int           default 0  not null,
     index attachment_create_time (create_time),
-    index attachment_media_type (media_type)
+    index attachment_media_type (media_type),
+    index attachment_user_id (user_id)
 ) ENGINE = INNODB
   DEFAULT charset = utf8mb4;
 
@@ -243,9 +245,23 @@ create table if not exists post
     top_priority     int           default 0  not null,
     visits           bigint        default 0  not null,
     word_count       bigint        default 0  not null,
+    author_id        int           default 0  not null,
     unique index uniq_post_slug (slug),
     index post_create_time (create_time),
-    index post_type_status (type, status)
+    index post_type_status (type, status),
+    index post_author_id (author_id)
+) ENGINE = INNODB
+  DEFAULT charset = utf8mb4;
+
+create table if not exists post_attachment
+(
+    id            int auto_increment primary key,
+    create_time   datetime(6) not null,
+    update_time   datetime(6) null,
+    post_id       int         not null,
+    attachment_id int         not null,
+    unique index uniq_post_attachment (post_id, attachment_id),
+    index post_attachment_attachment_id (attachment_id)
 ) ENGINE = INNODB
   DEFAULT charset = utf8mb4;
 
@@ -291,7 +307,23 @@ create table if not exists user
     mfa_type    int           default 0  not null,
     nickname    varchar(255)             not null,
     password    varchar(255)             not null,
-    username    varchar(50)              not null
+    username    varchar(50)              not null,
+    role        bigint        default 1  not null,
+    disabled    tinyint(1)    default 0  not null,
+    unique index uniq_user_username (username),
+    unique index uniq_user_email (email),
+    index user_role (role)
+) ENGINE = INNODB
+  DEFAULT charset = utf8mb4;
+
+create table if not exists mfa_recovery_code
+(
+    id          int auto_increment primary key,
+    create_time datetime(6)  not null,
+    user_id     int          not null,
+    code_hash   varchar(255) not null,
+    used_time   datetime(6)  null,
+    index mfa_recovery_code_user_id (user_id)
 ) ENGINE = INNODB
   DEFAULT charset = utf8mb4;
 

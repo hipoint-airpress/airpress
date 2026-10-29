@@ -16,4 +16,23 @@ type AttachmentDTO struct {
 	Height         int32                 `json:"height"`
 	Size           int64                 `json:"size"`
 	AttachmentType consts.AttachmentType `json:"type"`
+	// Owner 是附件归属人，附件无归属或用户已删除时为空。
+	Owner *AttachmentOwner `json:"owner"`
+}
+
+type AttachmentOwner struct {
+	ID       int32  `json:"id"`
+	Username string `json:"username"`
+	Nickname string `json:"nickname"`
+}
+
+// AttachmentReferencedPost 是引用某附件的文章摘要，用于删除冲突提示。
+type AttachmentReferencedPost struct {
+	ID    int32  `json:"id"`
+	Title string `json:"title"`
+	Slug  string `json:"slug"`
+}
+
+type AttachmentReferenceData struct {
+	Posts []*AttachmentReferencedPost `json:"posts"`
 }

@@ -9,6 +9,7 @@ func init() {
 	injection.Provide(
 		NewAdminService,
 		NewAttachmentService,
+		NewContentURLService,
 		NewAuthenticateService,
 		NewBackUpService,
 		NewBaseCommentService,
@@ -32,12 +33,14 @@ func init() {
 		NewPostCategoryService,
 		NewPostCommentService,
 		NewPostTagService,
+		NewRecoveryCodeService,
 		NewSheetService,
 		NewSheetCommentService,
 		NewStatisticService,
 		NewTagService,
 		NewThemeService,
 		NewUserService,
+		NewUserManagementService,
 		NewExportImport,
 		storage.NewFileStorageComposite,
 	)

@@ -20,6 +20,13 @@ func WrapDBErr(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return xerr.NoRecord.Wrap(err).WithMsg("The resource does not exist or has been deleted").WithStatus(xerr.StatusNotFound)
 	}
+	// 唯一索引冲突由数据库保证，这里只把错误翻译成 400，不再在业务层做查重。
+	message := strings.ToLower(err.Error())
+	if errors.Is(err, gorm.ErrDuplicatedKey) ||
+		strings.Contains(message, "unique constraint failed") ||
+		strings.Contains(message, "duplicate entry") {
+		return xerr.BadParam.Wrap(err).WithStatus(xerr.StatusBadRequest).WithMsg("数据已存在")
+	}
 	return xerr.DB.Wrap(err).WithStatus(xerr.StatusInternalServerError)
 }
 

@@ -22,18 +22,34 @@ import (
 type userServiceImpl struct {
 	TwoFactorMFAService service.TwoFactorTOTPMFAService
 	Event               event.Bus
+	OptionService       service.OptionService
+	RecoveryCodeService service.RecoveryCodeService
 }
 
-func NewUserService(twoFactorMFAService service.TwoFactorTOTPMFAService, event event.Bus) service.UserService {
+func NewUserService(twoFactorMFAService service.TwoFactorTOTPMFAService, event event.Bus, optionService service.OptionService, recoveryCodeService service.RecoveryCodeService) service.UserService {
 	return &userServiceImpl{
 		TwoFactorMFAService: twoFactorMFAService,
 		Event:               event,
+		OptionService:       optionService,
+		RecoveryCodeService: recoveryCodeService,
 	}
 }
 
 func (u *userServiceImpl) GetAllUser(ctx context.Context) ([]*entity.User, error) {
 	userDAL := dal.GetQueryByCtx(ctx).User
 	users, err := userDAL.WithContext(ctx).Find()
+	if err != nil {
+		return nil, WrapDBErr(err)
+	}
+	return users, nil
+}
+
+func (u *userServiceImpl) GetByIDs(ctx context.Context, ids []int32) ([]*entity.User, error) {
+	if len(ids) == 0 {
+		return make([]*entity.User, 0), nil
+	}
+	userDAL := dal.GetQueryByCtx(ctx).User
+	users, err := userDAL.WithContext(ctx).Where(userDAL.ID.In(ids...)).Find()
 	if err != nil {
 		return nil, WrapDBErr(err)
 	}
@@ -51,6 +67,9 @@ func (u *userServiceImpl) UpdatePassword(ctx context.Context, oldPassword string
 	}
 	if newPassword == oldPassword {
 		return xerr.WithStatus(nil, xerr.StatusBadRequest).WithMsg("The new password and the old password cannot be the same")
+	}
+	if err := validatePasswordStrength(newPassword); err != nil {
+		return err
 	}
 	userDal := dal.GetQueryByCtx(ctx).User
 	updateResult, err := userDal.WithContext(ctx).Where(userDal.ID.Eq(user.ID)).UpdateSimple(userDal.Password.Value(u.EncryptPassword(ctx, newPassword)))
@@ -96,6 +115,13 @@ func (u *userServiceImpl) UpdateMFA(ctx context.Context, mfaKey string, mfaType 
 			return xerr.WithStatus(nil, xerr.StatusBadRequest).WithMsg("Invalid Validation Code")
 		}
 	case consts.MFANone:
+		policy, err := u.OptionService.GetMFAPolicy(ctx)
+		if err != nil {
+			return err
+		}
+		if policy.Requires(user.Role) {
+			return xerr.WithStatus(nil, xerr.StatusBadRequest).WithMsg("当前安全策略要求开启两步验证，无法关闭")
+		}
 		ok := u.TwoFactorMFAService.ValidateTFACode(user.MfaKey, mfaCode)
 		if !ok {
 			return xerr.WithStatus(nil, xerr.StatusBadRequest).WithMsg("Invalid Validation Code")
@@ -115,7 +141,17 @@ func (u *userServiceImpl) UpdateMFA(ctx context.Context, mfaKey string, mfaType 
 	if updateResult.RowsAffected != 1 {
 		return xerr.DB.New("").WithMsg("update mfaKey error").WithStatus(xerr.StatusInternalServerError)
 	}
+	// 开启、更换或关闭 TOTP 后，旧的恢复码都必须失效。
+	if err := u.RecoveryCodeService.DeleteAll(ctx, user.ID); err != nil {
+		return err
+	}
 	u.Event.Publish(ctx, &event.UserUpdateEvent{})
+	u.Event.Publish(ctx, &event.LogEvent{
+		LogKey:    user.Username,
+		LogType:   consts.LogTypeMfaUpdated,
+		Content:   user.Nickname,
+		IPAddress: util.GetClientIP(ctx),
+	})
 	return nil
 }
 
@@ -127,6 +163,8 @@ func (u *userServiceImpl) ConvertToDTO(ctx context.Context, user *entity.User) *
 		Email:       user.Email,
 		Avatar:      user.Avatar,
 		Description: user.Description,
+		Role:        user.Role,
+		Disabled:    user.Disabled,
 		MFAType:     user.MfaType,
 		CreateTime:  user.CreateTime.UnixMilli(),
 	}
@@ -180,8 +218,12 @@ func (u *userServiceImpl) GetByID(ctx context.Context, id int32) (*entity.User, 
 }
 
 func (u *userServiceImpl) CreateByParam(ctx context.Context, userParam param.User) (*entity.User, error) {
-	if len(userParam.Password) < 8 || len(userParam.Password) > 100 {
-		return nil, xerr.BadParam.Wrap(nil).WithMsg("password length err")
+	if err := validatePasswordStrength(userParam.Password); err != nil {
+		return nil, err
+	}
+	role := userParam.Role
+	if !role.IsValid() {
+		role = consts.UserRoleAuthor
 	}
 	user := &entity.User{
 		Description: userParam.Description,
@@ -192,6 +234,7 @@ func (u *userServiceImpl) CreateByParam(ctx context.Context, userParam param.Use
 		MfaKey:      "",
 		MfaType:     consts.MFANone,
 		Avatar:      userParam.Avatar,
+		Role:        role,
 	}
 	userDAL := dal.GetQueryByCtx(ctx).User
 	err := userDAL.WithContext(ctx).Create(user)

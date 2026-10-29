@@ -33,6 +33,7 @@ type exportImport struct {
 	TagService          service.TagService
 	PostTagService      service.PostTagService
 	PostCategoryService service.PostCategoryService
+	ContentURLService   service.ContentURLService
 }
 
 func NewExportImport(categoryService service.CategoryService,
@@ -40,6 +41,7 @@ func NewExportImport(categoryService service.CategoryService,
 	tagService service.TagService,
 	postTagService service.PostTagService,
 	postCategoryService service.PostCategoryService,
+	contentURLService service.ContentURLService,
 ) service.ExportImport {
 	return &exportImport{
 		CategoryService:     categoryService,
@@ -47,6 +49,7 @@ func NewExportImport(categoryService service.CategoryService,
 		TagService:          tagService,
 		PostTagService:      postTagService,
 		PostCategoryService: postCategoryService,
+		ContentURLService:   contentURLService,
 	}
 }
 
@@ -263,7 +266,11 @@ func (e *exportImport) ExportMarkdown(ctx context.Context, needFrontMatter bool)
 				markdown.WriteString("---\n")
 			}
 		}
-		markdown.WriteString(post.OriginalContent)
+		originalContent, err := e.ContentURLService.Resolve(ctx, post.OriginalContent)
+		if err != nil {
+			return "", err
+		}
+		markdown.WriteString(originalContent)
 
 		fileName := post.CreateTime.Format("2006-01-02") + "-" + post.Slug + ".md"
 		file, err := os.OpenFile(filepath.Join(backupFilePath, fileName), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0o644)
